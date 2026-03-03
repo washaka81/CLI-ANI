@@ -47,44 +47,28 @@ def check_dependencies():
     missing = []
     system = platform.system()
     
-    print("\n" + "="*60)
-    print("🔍 Verificando dependencias...")
-    print("="*60)
-    
     # Python packages
     try:
         import requests
-        print("✅ requests")
     except ImportError:
         missing.append("requests")
-        print("❌ requests")
     
     try:
         import bs4
-        print("✅ beautifulsoup4")
     except ImportError:
         missing.append("beautifulsoup4")
-        print("❌ beautifulsoup4")
     
     # System binaries
-    if shutil.which("mpv"):
-        print("✅ mpv")
-    else:
+    if not shutil.which("mpv"):
         missing.append("mpv")
-        print("❌ mpv")
     
-    if shutil.which("yt-dlp"):
-        print("✅ yt-dlp")
-    else:
+    if not shutil.which("yt-dlp"):
         missing.append("yt-dlp")
-        print("❌ yt-dlp")
     
-    if shutil.which("node"):
-        print("✅ node (for Playwright)")
-    else:
+    if not shutil.which("node"):
         missing.append("node")
-        print("❌ node (required for Playwright)")
     
+    # Si hay faltantes, mostrar mensaje de error
     if missing:
         print("\n" + "="*60)
         print("❌ FALTAN DEPENDENCIAS")
@@ -96,20 +80,14 @@ def check_dependencies():
             if "requests" in missing or "beautifulsoup4" in missing:
                 print("  pip install requests beautifulsoup4")
             if "mpv" in missing:
-                print("  # Debian/Ubuntu:")
-                print("  sudo apt install mpv")
-                print("  # Arch Linux:")
-                print("  sudo pacman -S mpv")
-                print("  # Termux:")
-                print("  pkg install mpv")
+                print("  # Debian/Ubuntu: sudo apt install mpv")
+                print("  # Arch Linux: sudo pacman -S mpv")
+                print("  # Termux: pkg install mpv")
             if "yt-dlp" in missing:
                 print("  pip install yt-dlp")
             if "node" in missing:
-                print("  # Debian/Ubuntu:")
-                print("  sudo apt install nodejs npm")
-                print("  # Termux:")
-                print("  pkg install nodejs")
-                print("  # Luego ejecutar:")
+                print("  # Debian/Ubuntu: sudo apt install nodejs npm")
+                print("  # Termux: pkg install nodejs")
                 print("  npm install playwright && npx playwright install chromium")
         
         elif system == "Darwin":
@@ -141,7 +119,6 @@ def check_dependencies():
         print("\n" + "="*60)
         return False
     
-    print("\n✅ Todas las dependencias están instaladas!")
     return True
 
 
@@ -185,14 +162,18 @@ def add_to_history(title, url, slug):
     save_history()
 
 def mark_episode_viewed(slug, episode):
+    # Convertir a string para consistencia
+    episode_str = str(episode)
     if slug not in HISTORY["vistos"]:
         HISTORY["vistos"][slug] = []
-    if episode not in HISTORY["vistos"][slug]:
-        HISTORY["vistos"][slug].append(episode)
+    if episode_str not in HISTORY["vistos"][slug]:
+        HISTORY["vistos"][slug].append(episode_str)
         save_history()
 
 def is_episode_viewed(slug, episode):
-    return episode in HISTORY.get("vistos", {}).get(slug, [])
+    # Convertir a string para comparar correctamente
+    episode_str = str(episode)
+    return episode_str in HISTORY.get("vistos", {}).get(slug, [])
 
 def print_history():
     if not HISTORY["animes"]:
