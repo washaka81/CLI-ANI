@@ -42,10 +42,71 @@ import shutil
 BASE_URL = "https://www3.animeflv.net"
 SESSION = requests.Session()
 
+
+def is_termux():
+    """Detecta si está ejecutándose en Termux/Android"""
+    return (
+        os.environ.get('TERMUX_VERSION') is not None
+        or os.path.exists('/data/data/com.termux')
+        or 'com.termux' in os.environ.get('PREFIX', '')
+    )
+
+
+def play_with_mpv(url, referer, cookie=None):
+    """Reproduce video con mpv según la plataforma"""
+    if is_termux():
+        # Opciones para Android/Termux
+        opts = [
+            'mpv', url,
+            '--referrer', referer,
+            '--vo', 'tct',
+            '--hwdec', 'mediacodec',
+            '--cache', 'yes',
+            '--cache-secs', '300',
+            '--player-operation-mode', 'cplayer',
+        ]
+        
+        if cookie:
+            opts.extend(['--http-header-fields', f'Cookie: {cookie}'])
+        
+        # Intentar primero con mpv
+        try:
+            result = subprocess.run(opts, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if result.returncode == 0:
+                return True
+        except:
+            pass
+        
+        # Si falla, intentar con termux-open
+        try:
+            print("   📱 Abriendo con reproductor externo...")
+            subprocess.run(['termux-open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except:
+            pass
+        
+        return False
+    else:
+        # Opciones para desktop
+        opts = [
+            'mpv', url,
+            '--referrer', referer,
+            '--cache', 'yes',
+            '--cache-secs', '300',
+            '--force-window', 'yes',
+        ]
+        
+        if cookie:
+            opts.extend(['--http-header-fields', f'Cookie: {cookie}'])
+        
+        return subprocess.run(opts).returncode == 0
+
+
 def check_dependencies():
     """Verifica que todas las dependencias estén instaladas"""
     missing = []
     system = platform.system()
+    is_android = is_termux()
     
     # Python packages
     try:
@@ -74,20 +135,29 @@ def check_dependencies():
         print("❌ FALTAN DEPENDENCIAS")
         print("="*60)
         
-        if system == "Linux":
-            print("\n📦 Instalación en LINUX/TERMUX:")
+        if is_android:
+            print("\n📦 Instalación en TERMUX (Android):")
+            print("-" * 40)
+            print("  pkg update && pkg upgrade")
+            print("  pkg install curl jq mpv nodejs")
+            print("  pip install yt-dlp")
+            print("  npm install playwright && npx playwright install chromium")
+            print("")
+            print("  # Para reproducir en Android:")
+            print("  termux-setup-storage")
+            
+        elif system == "Linux":
+            print("\n📦 Instalación en LINUX:")
             print("-" * 40)
             if "requests" in missing or "beautifulsoup4" in missing:
                 print("  pip install requests beautifulsoup4")
             if "mpv" in missing:
                 print("  # Debian/Ubuntu: sudo apt install mpv")
                 print("  # Arch Linux: sudo pacman -S mpv")
-                print("  # Termux: pkg install mpv")
             if "yt-dlp" in missing:
                 print("  pip install yt-dlp")
             if "node" in missing:
                 print("  # Debian/Ubuntu: sudo apt install nodejs npm")
-                print("  # Termux: pkg install nodejs")
                 print("  npm install playwright && npx playwright install chromium")
         
         elif system == "Darwin":
@@ -118,6 +188,12 @@ def check_dependencies():
         
         print("\n" + "="*60)
         return False
+    
+    # Mostrar plataforma detectada
+    if is_android:
+        print("\n📱 Detectado: Termux/Android")
+    else:
+        print(f"\n💻 Detectado: {system}")
     
     return True
 
@@ -258,16 +334,29 @@ def get_best_link(server):
 
 
 def play_with_options(final_url, server_url, cookie=None, extra_opts=None):
-    opts = [
-        "mpv", final_url,
-        f"--referrer={server_url}",
-        "--cache=yes",
-        "--cache-secs=300",
-        "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_at_eof=1,reconnect_delay_max=5",
-        "--stream-buffer-size=16MiB",
-        "--demuxer-max-bytes=100MiB",
-        "--force-window=yes",
-    ]
+    if is_termux():
+        # Opciones para Termux/Android
+        opts = [
+            "mpv", final_url,
+            f"--referrer={server_url}",
+            "--vo", "tct",
+            "--hwdec", "mediacodec",
+            "--cache=yes",
+            "--cache-secs=300",
+            "--player-operation-mode=cplayer",
+        ]
+    else:
+        # Opciones para desktop
+        opts = [
+            "mpv", final_url,
+            f"--referrer={server_url}",
+            "--cache=yes",
+            "--cache-secs=300",
+            "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_at_eof=1,reconnect_delay_max=5",
+            "--stream-buffer-size=16MiB",
+            "--demuxer-max-bytes=100MiB",
+            "--force-window=yes",
+        ]
     
     if cookie:
         opts.append(f"--http-header-fields=Cookie: {cookie}")
@@ -292,32 +381,64 @@ def try_ytdlp_play(final_url, server_url):
 
 
 def download_and_play(final_url, server_url):
-    import tempfile
-    temp_file = os.path.join(tempfile.gettempdir(), 'cli_ani_temp.mp4')
-    
-    cmd = [
-        'yt-dlp', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        '-o', temp_file, '--referer', server_url, '--no-playlist', '--buffer-size', '16M', final_url
-    ]
-    
     print("   📥 Descargando (buffer alto)...")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     
-    if result.returncode != 0:
-        cmd_alt = ['yt-dlp', '-f', 'best', '-o', temp_file, '--referer', server_url, '--no-playlist', final_url]
-        result = subprocess.run(cmd_alt, capture_output=True, text=True, timeout=600)
+    if is_termux():
+        # Termux: descargar a Downloads y abrir con reproductor externo
+        temp_file = '/sdcard/Download/cli_ani_video.mp4'
+        
+        cmd = [
+            'yt-dlp', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            '-o', temp_file, '--referer', server_url, '--no-playlist', '--buffer-size', '16M', final_url
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        
         if result.returncode != 0:
-            return False
-    
-    if os.path.exists(temp_file):
-        print(f"   ▶️  Reproduciendo archivo local...")
-        subprocess.run(["mpv", temp_file, "--force-window=yes"])
-        try:
-            os.remove(temp_file)
-        except:
-            pass
-        return True
-    return False
+            cmd_alt = ['yt-dlp', '-f', 'best', '-o', temp_file, '--referer', server_url, '--no-playlist', final_url]
+            result = subprocess.run(cmd_alt, capture_output=True, text=True, timeout=600)
+            if result.returncode != 0:
+                return False
+        
+        if os.path.exists(temp_file):
+            print("   📱 Abriendo con reproductor externo...")
+            # Intentar con termux-open
+            try:
+                subprocess.run(['termux-open', temp_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            except:
+                # Fallback a mpv
+                subprocess.run(['mpv', temp_file, '--vo', 'tct', '--hwdec', 'mediacodec'], 
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+        return False
+    else:
+        # Desktop
+        import tempfile
+        temp_file = os.path.join(tempfile.gettempdir(), 'cli_ani_temp.mp4')
+        
+        cmd = [
+            'yt-dlp', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            '-o', temp_file, '--referer', server_url, '--no-playlist', '--buffer-size', '16M', final_url
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        
+        if result.returncode != 0:
+            cmd_alt = ['yt-dlp', '-f', 'best', '-o', temp_file, '--referer', server_url, '--no-playlist', final_url]
+            result = subprocess.run(cmd_alt, capture_output=True, text=True, timeout=600)
+            if result.returncode != 0:
+                return False
+        
+        if os.path.exists(temp_file):
+            print("   ▶️  Reproduciendo archivo local...")
+            subprocess.run(["mpv", temp_file, "--force-window=yes"])
+            try:
+                os.remove(temp_file)
+            except:
+                pass
+            return True
+        return False
 
 
 def try_all_methods(final_url, server_url, cookie=None):
@@ -507,7 +628,7 @@ def main():
             if ok == 's':
                 # Marcar como visto
                 mark_episode_viewed(slug, target)
-                print(f"   ✅ Episode {target} marcado como visto")
+                print(f"   ✅ Episodio {target} marcado como visto")
                 break
         else:
             print("   ❌ No funcionó, intentando siguiente...")
