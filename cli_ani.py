@@ -77,7 +77,17 @@ def play_with_mpv(url, referer, cookie=None):
         except:
             pass
         
-        # Si falla, intentar con termux-open
+        # Si falla, intentar con termux-open y app is.xyz.mpv
+        try:
+            print("   📱 Abriendo con MPV (is.xyz.mpv)...")
+            # Usar el esquema de URL de MPV Android
+            mpv_url = f"is.xyz.mpv://{url}"
+            subprocess.run(['termux-open', mpv_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except:
+            pass
+        
+        # Último intento: abrir con cualquier reproductor disponible
         try:
             print("   📱 Abriendo con reproductor externo...")
             subprocess.run(['termux-open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -401,16 +411,27 @@ def download_and_play(final_url, server_url):
                 return False
         
         if os.path.exists(temp_file):
-            print("   📱 Abriendo con reproductor externo...")
-            # Intentar con termux-open
+            print("   📱 Abriendo con MPV (is.xyz.mpv)...")
+            # Intentar con termux-open y app is.xyz.mpv
+            try:
+                mpv_url = f"is.xyz.mpv://{temp_file}"
+                subprocess.run(['termux-open', mpv_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            except:
+                pass
+            # Fallback a mpv
+            try:
+                subprocess.run(['mpv', temp_file, '--vo', 'tct', '--hwdec', 'mediacodec'], 
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            except:
+                pass
+            # Último intento: cualquier reproductor
             try:
                 subprocess.run(['termux-open', temp_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return True
             except:
-                # Fallback a mpv
-                subprocess.run(['mpv', temp_file, '--vo', 'tct', '--hwdec', 'mediacodec'], 
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return True
+                pass
         return False
     else:
         # Desktop
