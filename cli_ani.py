@@ -52,10 +52,52 @@ def is_termux():
     )
 
 
+def is_android_mpv_installed():
+    """Verifica si la app MPV (is.xyz.mpv) está instalada en Android"""
+    try:
+        # Verificar si el paquete está instalado
+        result = subprocess.run(
+            ['pm', 'list', 'packages'],
+            capture_output=True, text=True, timeout=5
+        )
+        if 'is.xyz.mpv' in result.stdout:
+            return True
+    except:
+        pass
+    
+    # También verificar si termux-open puede abrir el esquema
+    try:
+        result = subprocess.run(
+            ['termux-open', '--available', 'is.xyz.mpv://test'],
+            capture_output=True, text=True, timeout=5
+        )
+    except:
+        pass
+    
+    return False
+
+
 def play_with_mpv(url, referer, cookie=None):
     """Reproduce video con mpv según la plataforma"""
     if is_termux():
-        # Opciones para Android/Termux
+        # Verificar si hay app MPV en Android
+        android_mpv = is_android_mpv_installed()
+        
+        if android_mpv:
+            # Usar app MPV de Android directamente
+            try:
+                print("   📱 Abriendo con MPV Android (is.xyz.mpv)...")
+                full_url = url
+                if cookie:
+                    full_url = f"{url}--http-header-fields=Cookie:{cookie}"
+                mpv_url = f"is.xyz.mpv://{full_url}"
+                subprocess.run(['termux-open', mpv_url], 
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                return True
+            except:
+                pass
+        
+        # Opciones para mpv de Termux
         opts = [
             'mpv', url,
             '--referrer', referer,
@@ -69,21 +111,11 @@ def play_with_mpv(url, referer, cookie=None):
         if cookie:
             opts.extend(['--http-header-fields', f'Cookie: {cookie}'])
         
-        # Intentar primero con mpv
+        # Intentar con mpv de Termux
         try:
             result = subprocess.run(opts, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if result.returncode == 0:
                 return True
-        except:
-            pass
-        
-        # Si falla, intentar con termux-open y app is.xyz.mpv
-        try:
-            print("   📱 Abriendo con MPV (is.xyz.mpv)...")
-            # Usar el esquema de URL de MPV Android
-            mpv_url = f"is.xyz.mpv://{url}"
-            subprocess.run(['termux-open', mpv_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return True
         except:
             pass
         
@@ -411,16 +443,23 @@ def download_and_play(final_url, server_url):
                 return False
         
         if os.path.exists(temp_file):
-            print("   📱 Abriendo con MPV (is.xyz.mpv)...")
-            # Intentar con termux-open y app is.xyz.mpv
+            # Verificar si hay app MPV en Android
+            android_mpv = is_android_mpv_installed()
+            
+            if android_mpv:
+                try:
+                    print("   📱 Abriendo con MPV Android (is.xyz.mpv)...")
+                    # Usar el archivo local con MPV Android
+                    mpv_url = f"is.xyz.mpv://{temp_file}"
+                    subprocess.run(['termux-open', mpv_url], 
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                    return True
+                except:
+                    pass
+            
+            # Fallback a mpv de Termux
             try:
-                mpv_url = f"is.xyz.mpv://{temp_file}"
-                subprocess.run(['termux-open', mpv_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return True
-            except:
-                pass
-            # Fallback a mpv
-            try:
+                print("   📱 Abriendo con mpv de Termux...")
                 subprocess.run(['mpv', temp_file, '--vo', 'tct', '--hwdec', 'mediacodec'], 
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return True
@@ -428,6 +467,7 @@ def download_and_play(final_url, server_url):
                 pass
             # Último intento: cualquier reproductor
             try:
+                print("   📱 Abriendo con reproductor externo...")
                 subprocess.run(['termux-open', temp_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return True
             except:
