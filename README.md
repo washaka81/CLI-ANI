@@ -82,16 +82,3 @@ Si tienes ideas para mejorar la extracción de enlaces o el manejo de la termina
 **Desarrollado con ❤️ por Washaka (2026)**
 
 ---
-
-### ¿Cómo subir este archivo a tu GitHub?
-
-Como ya configuraste tu repositorio antes, solo haz esto en tu terminal de Linux:
-
-1. Crea el archivo: `nano README.md` (pega el contenido de arriba y guarda con `Ctrl+O`, `Enter` y `Ctrl+X`).
-2. Sube los cambios:
-```bash
-git add README.md
-git commit -m "Añadido README profesional"
-git push origin main
-
-```
