@@ -134,13 +134,13 @@ def play_android_mpv(url, referer=None):
         if not user_agent:
             user_agent = 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36'
         
-        # Intento 1: io.mpv con FLAG_ACTIVITY_NEW_TASK
+        # Intento 1: io.mpv
         print("   🎬 Abriendo io.mpv...")
         cmd1 = [
             'am', 'start', '--user', '0',
             '-a', 'android.intent.action.VIEW',
             '-d', video_url,
-            '-n', 'io.mpv/mpv.android.MPVActivity',
+            '-n', 'io.mpv/.MPVActivity',
             '-f', '0x10000000',
             '--es', 'http-header-referer', actual_referer,
             '--es', 'http-header-user-agent', user_agent
@@ -157,7 +157,7 @@ def play_android_mpv(url, referer=None):
             'am', 'start', '--user', '0',
             '-a', 'android.intent.action.VIEW',
             '-d', video_url,
-            '-n', 'is.xyz.mpv/mpv.android.MPVActivity',
+            '-n', 'is.xyz.mpv/.MPVActivity',
             '-f', '0x10000000',
             '--es', 'http-header-referer', actual_referer,
             '--es', 'http-header-user-agent', user_agent
@@ -192,14 +192,9 @@ def play_with_mpv(url, referer, cookie=None):
     """Reproduce video con mpv según la plataforma"""
     platform = get_platform()
     
-    # ANDROID: usar app MPV Android EXCLUSIVAMENTE
+    # ANDROID: solo mpv-android
     if platform == 'android':
-        if play_android_mpv(url, referer):
-            return True
-        # Fallback: descargar y abrir con reproductor externo
-        if download_and_play(url, referer):
-            return True
-        return False
+        return play_android_mpv(url, referer)
     
     # WINDOWS: usar mpv de Windows
     elif platform == 'windows':
@@ -1128,13 +1123,9 @@ def get_best_link(server):
 
 
 def play_with_options(final_url, server_url, cookie=None, extra_opts=None):
-    # ANDROID: usar exclusivamente mpv-android
+    # ANDROID: solo mpv-android
     if is_termux():
-        # Intentar primero con mpv-android
         if play_android_mpv(final_url, server_url):
-            return 0
-        # Fallback: descargar y abrir con reproductor externo
-        if download_and_play(final_url, server_url):
             return 0
         return -1
     
