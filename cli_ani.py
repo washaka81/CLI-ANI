@@ -91,44 +91,77 @@ def get_platform():
 def play_android_mpv(url, referer=None):
     """Reproduce usando la app MPV Android (io.mpv) con am start"""
     try:
-        # Obtener URL directa si es stream
         video_url = url
+        user_agent = None
         
-        # Intentar extraer URL directa con yt-dlp si es un stream m3u8
-        if url.endswith('.m3u8') or 'm3u8' in url:
+        if url.endswith('.m3u8') or 'm3u8' in url or 'streamwish' in url.lower() or 'streamtape' in url.lower():
             try:
                 result = subprocess.run(
-                    ['yt-dlp', '-g', url],
+                    ['yt-dlp', '-j', '--no-playlist', url],
                     capture_output=True, text=True, timeout=30
                 )
                 if result.returncode == 0 and result.stdout.strip():
-                    video_url = result.stdout.strip().split('\n')[0]
-            except:
-                pass
+                    video_data = json.loads(result.stdout.strip())
+                    video_url = video_data.get('url', url)
+                    user_agent = video_data.get('http_headers', {}).get('User-Agent')
+                    print(f"   📡 URL desofuscada: {video_url[:50]}...")
+            except Exception as e:
+                print(f"   ⚠️ yt-dlp -j falló: {e}, intentando con -g")
+                try:
+                    result = subprocess.run(
+                        ['yt-dlp', '-g', url],
+                        capture_output=True, text=True, timeout=30
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        video_url = result.stdout.strip().split('\n')[0]
+                except:
+                    pass
         
-        # Método 1: io.mpv (package correcto según el bash del usuario)
+        cmd_base = ['am', 'start', '--user', '0']
+        default_referer = referer or 'https://www3.animeflv.net/'
+        
         try:
-            subprocess.run(
-                ['am', 'start', '-n', 'io.mpv/.MPVActivity',
-                 '-d', video_url],
-                capture_output=True, timeout=15
-            )
+            cmd = cmd_base + [
+                '-n', 'io.mpv/.MPVActivity',
+                '-d', video_url,
+            ]
+            if user_agent:
+                cmd.extend(['--es', 'http-header-user-agent', user_agent])
+            if default_referer:
+                cmd.extend(['--es', 'http-header-referer', default_referer])
+            subprocess.run(cmd, capture_output=True, timeout=15)
             return True
         except:
             pass
         
-        # Método 2: com.mpv.android (alternativo)
         try:
-            subprocess.run(
-                ['am', 'start', '-n', 'com.mpv.android/com.mpv.ui.VideoPlayerActivity',
-                 '--es', 'url', video_url],
-                capture_output=True, timeout=15
-            )
+            cmd = cmd_base + [
+                '-n', 'io.mpv/.MPVActivity',
+                '--es', 'url', video_url,
+            ]
+            if user_agent:
+                cmd.extend(['--es', 'http-header-user-agent', user_agent])
+            if default_referer:
+                cmd.extend(['--es', 'http-header-referer', default_referer])
+            subprocess.run(cmd, capture_output=True, timeout=15)
             return True
         except:
             pass
         
-        # Método 3: Con termux-open
+        try:
+            cmd = cmd_base + [
+                '-n', 'com.mpv.android/com.mpv.ui.VideoPlayerActivity',
+                '--es', 'url', video_url,
+            ]
+            if user_agent:
+                cmd.extend(['--es', 'http-header-user-agent', user_agent])
+            if default_referer:
+                cmd.extend(['--es', 'http-header-referer', default_referer])
+            subprocess.run(cmd, capture_output=True, timeout=15)
+            return True
+        except:
+            pass
+        
         try:
             mpv_url = f"io.mpv://{video_url}"
             subprocess.run(['termux-open', mpv_url], capture_output=True, timeout=15)
