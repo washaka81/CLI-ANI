@@ -146,10 +146,9 @@ def play_android_mpv(url, referer=None):
             '--es', 'http-header-user-agent', user_agent
         ]
         
-        result = subprocess.run(cmd1, capture_output=True, timeout=15)
+        result = subprocess.run(cmd1, capture_output=True, timeout=10, stderr=subprocess.DEVNULL)
         if result.returncode == 0:
-            print("   ✅ Reproduciendo")
-            return True
+            return ask_playback_success()
         
         # Intento 2: is.xyz.mpv
         print("   🎬 Abriendo is.xyz.mpv...")
@@ -163,10 +162,9 @@ def play_android_mpv(url, referer=None):
             '--es', 'http-header-user-agent', user_agent
         ]
         
-        result = subprocess.run(cmd2, capture_output=True, timeout=15)
+        result = subprocess.run(cmd2, capture_output=True, timeout=10, stderr=subprocess.DEVNULL)
         if result.returncode == 0:
-            print("   ✅ Reproduciendo")
-            return True
+            return ask_playback_success()
         
         # Intento 3: genérico
         print("   🎬 Abriendo con VIEW...")
@@ -176,15 +174,13 @@ def play_android_mpv(url, referer=None):
             '-d', video_url,
             '-f', '0x10000000'
         ]
-        result = subprocess.run(cmd3, capture_output=True, timeout=15)
+        result = subprocess.run(cmd3, capture_output=True, timeout=10, stderr=subprocess.DEVNULL)
         if result.returncode == 0:
-            print("   ✅ Reproduciendo")
-            return True
+            return ask_playback_success()
         
         print("   ❌ Sin método de reproducción")
         return False
-    except Exception as e:
-        print("   ❌ Error")
+    except:
         return False
 
 
@@ -207,7 +203,11 @@ def play_with_mpv(url, referer, cookie=None):
         ]
         if cookie:
             opts.append(f'--http-header-fields=Cookie: {cookie}')
-        return subprocess.run(opts).returncode == 0
+        result = subprocess.run(opts)
+        if result.returncode == 0:
+            print("✅ Video reproducido exitosamente")
+            return ask_playback_success()
+        return result.returncode == 0
     
     # MACOS: usar mpv de macOS
     elif platform == 'macos':
@@ -220,7 +220,11 @@ def play_with_mpv(url, referer, cookie=None):
         ]
         if cookie:
             opts.append(f'--http-header-fields=Cookie: {cookie}')
-        return subprocess.run(opts).returncode == 0
+        result = subprocess.run(opts)
+        if result.returncode == 0:
+            print("✅ Video reproducido exitosamente")
+            return ask_playback_success()
+        return result.returncode == 0
     
     # LINUX: usar mpv de Linux
     else:
@@ -233,7 +237,11 @@ def play_with_mpv(url, referer, cookie=None):
         ]
         if cookie:
             opts.append(f'--http-header-fields=Cookie: {cookie}')
-        return subprocess.run(opts).returncode == 0
+        result = subprocess.run(opts)
+        if result.returncode == 0:
+            print("✅ Video reproducido exitosamente")
+            return ask_playback_success()
+        return result.returncode == 0
 
 
 def check_dependencies():
@@ -463,6 +471,76 @@ def is_episode_viewed(slug, episode):
     # Convertir a string para comparar correctamente
     episode_str = str(episode)
     return episode_str in HISTORY.get("vistos", {}).get(slug, [])
+
+def ask_playback_success():
+    """Pregunta al usuario si el video funcionó"""
+    import sys
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        print("")
+        response = input("❓ ¿Funcionó el video? (s/n): ").strip().lower()
+        return response in ['s', 'si', 'sí', 'y', 'yes']
+    except:
+        return False
+
+
+RANKING_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'server_ranking.json')
+
+SERVER_RANKING = {}
+
+def load_ranking():
+    global SERVER_RANKING
+    try:
+        if os.path.exists(RANKING_FILE):
+            with open(RANKING_FILE, 'r') as f:
+                SERVER_RANKING = json.load(f)
+    except:
+        pass
+
+def save_ranking():
+    try:
+        with open(RANKING_FILE, 'w') as f:
+            json.dump(SERVER_RANKING, f, indent=2)
+    except:
+        pass
+
+def record_server_result(server_name, success):
+    """Registra el resultado de un servidor"""
+    if server_name not in SERVER_RANKING:
+        SERVER_RANKING[server_name] = {"success": 0, "fail": 0, "total": 0}
+    
+    SERVER_RANKING[server_name]["total"] += 1
+    if success:
+        SERVER_RANKING[server_name]["success"] += 1
+    else:
+        SERVER_RANKING[server_name]["fail"] += 1
+    save_ranking()
+
+def get_server_success_rate(server_name):
+    """Retorna la tasa de éxito de un servidor (0-100)"""
+    if server_name not in SERVER_RANKING:
+        return 50
+    stats = SERVER_RANKING[server_name]
+    if stats["total"] == 0:
+        return 50
+    return (stats["success"] / stats["total"]) * 100
+
+def print_ranking():
+    """Muestra el ranking de servidores"""
+    if not SERVER_RANKING:
+        print("\n📊 Sin datos de ranking todavía")
+        return
+    
+    print("\n📊 Ranking de servidores:")
+    sorted_servers = sorted(
+        SERVER_RANKING.items(),
+        key=lambda x: (x[1]["success"] / x[1]["total"] * 100) if x[1]["total"] > 0 else 50,
+        reverse=True
+    )
+    for name, stats in sorted_servers:
+        rate = (stats["success"] / stats["total"] * 100) if stats["total"] > 0 else 50
+        print(f"  {name}: {rate:.1f}% ({stats['success']}/{stats['total']})")
 
 def print_history():
     if not HISTORY["animes"]:
@@ -1159,128 +1237,131 @@ def play_with_options(final_url, server_url, cookie=None, extra_opts=None):
     
     print(f"   📶 Buffer: {net_config['priority']} ({net_config['cache_secs']}s cache)")
     
-    return subprocess.run(opts).returncode
+    try:
+        subprocess.run(opts, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if ask_playback_success():
+            return 1
+    except Exception as e:
+        print(f"   ❌ Error al lanzar MPV: {e}")
+    
+    return 0
 
 
 def try_ytdlp_play(final_url, server_url):
+    import time
     try:
-        cmd = ["yt-dlp", "-f", "best", "--no-playlist", "--referer", server_url, "-o", "-", final_url]
+        cmd = ["yt-dlp", "-q", "--no-warnings", "-f", "best", "--no-playlist", "--referer", server_url, "-o", "-", final_url]
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        mpv_cmd = ["mpv", "-", f"--referrer={server_url}", "--cache=yes", "--force-window=yes"]
+        mpv_cmd = ["mpv", "-", f"--referrer={server_url}", "--cache=yes", "--force-window=yes", "--msg-level=all=no"]
         mpv = subprocess.Popen(mpv_cmd, stdin=proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if proc.stdout:
             proc.stdout.close()
-        return mpv.wait()
-    except Exception as e:
-        print("   ❌ yt-dlp bridge error")
-        return -1
+        
+        start_time = time.time()
+        result = mpv.wait()
+        
+        if (time.time() - start_time) < 5:
+            return 0
+        
+        if ask_playback_success():
+            return 1
+        return 0
+    except:
+        return 0
 
 
 def download_and_play(final_url, server_url):
     print("   📥 Descargando (buffer alto)...")
     
     if is_termux():
-        # Termux: descargar a Downloads y abrir con reproductor externo
         temp_file = '/sdcard/Download/cli_ani_video.mp4'
         
         cmd = [
-            'yt-dlp', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'yt-dlp', '-q', '--no-warnings', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             '-o', temp_file, '--referer', server_url, '--no-playlist', '--buffer-size', '16M', final_url
         ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
+        result = subprocess.run(cmd, capture_output=True, timeout=600,
                                 stderr=subprocess.DEVNULL)
         
         if result.returncode != 0:
-            cmd_alt = ['yt-dlp', '-f', 'best', '-o', temp_file, '--referer', server_url, '--no-playlist', final_url]
-            result = subprocess.run(cmd_alt, capture_output=True, text=True, timeout=600,
+            cmd_alt = ['yt-dlp', '-q', '--no-warnings', '-f', 'best', '-o', temp_file, '--referer', server_url, '--no-playlist', final_url]
+            result = subprocess.run(cmd_alt, capture_output=True, timeout=600,
                                     stderr=subprocess.DEVNULL)
             if result.returncode != 0:
-                return False
+                return 0
         
         if os.path.exists(temp_file):
-            # Verificar players disponibles en Android
             android_players = check_android_players()
             
-            # 1. MPV Android
             if android_players.get('com.mpv.android', False):
                 try:
                     print("   📱 Abriendo con MPV Android...")
                     mpv_url = f"com.mpv.android://{temp_file}"
                     subprocess.run(['termux-open', mpv_url], 
                                  capture_output=True, timeout=10)
-                    return True
+                    return 1 if ask_playback_success() else 0
                 except:
                     pass
             
-            # Fallback: termux-open genérico
             try:
                 print("   📱 Abriendo con reproductor externo...")
                 subprocess.run(['termux-open', temp_file], capture_output=True, timeout=10)
-                return True
+                return 1 if ask_playback_success() else 0
             except:
                 pass
-        return False
+        return 0
     else:
-        # Desktop
         import tempfile
         temp_file = os.path.join(tempfile.gettempdir(), 'cli_ani_temp.mp4')
         
         cmd = [
-            'yt-dlp', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'yt-dlp', '-q', '--no-warnings', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             '-o', temp_file, '--referer', server_url, '--no-playlist', '--buffer-size', '16M', final_url
         ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
+        result = subprocess.run(cmd, capture_output=True, timeout=600,
                                 stderr=subprocess.DEVNULL)
         
         if result.returncode != 0:
-            cmd_alt = ['yt-dlp', '-f', 'best', '-o', temp_file, '--referer', server_url, '--no-playlist', final_url]
-            result = subprocess.run(cmd_alt, capture_output=True, text=True, timeout=600,
+            cmd_alt = ['yt-dlp', '-q', '--no-warnings', '-f', 'best', '-o', temp_file, '--referer', server_url, '--no-playlist', final_url]
+            result = subprocess.run(cmd_alt, capture_output=True, timeout=600,
                                     stderr=subprocess.DEVNULL)
             if result.returncode != 0:
-                return False
+                return 0
         
         if os.path.exists(temp_file):
             print("   ▶️  Reproduciendo archivo local...")
-            subprocess.run(["mpv", temp_file, "--force-window=yes"],
+            subprocess.run(["mpv", temp_file, "--force-window=yes", "--msg-level=all=no"],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            try:
-                os.remove(temp_file)
-            except:
-                pass
-            return True
-        return False
+            return 1 if ask_playback_success() else 0
+        return 0
 
 
-def try_all_methods(final_url, server_url, cookie=None):
-    # ANDROID
+def try_all_methods(final_url, server_url, cookie=None, server_name=None):
+    """Intenta reproducir con múltiples métodos. Retorna 1 solo si el usuario confirma éxito."""
     if is_termux():
-        print("▶️  Reproduciendo...")
-        if play_with_options(final_url, server_url, cookie) == 0:
-            return True
-        print("⚠️ Error en reproducción")
-        return False
+        print("▶️  Reproduciendo en Android...")
+        success = play_android_mpv(final_url, server_url)
+        return 1 if success else 0
     
-    # Desktop
-    print("▶️  Método 1...")
-    if play_with_options(final_url, server_url, cookie) == 0:
-        return True
+    # Desktop - intentar múltiples métodos
+    print("▶️  Método 1: mpv directo...")
+    res = play_with_options(final_url, server_url, cookie)
+    if res == 1:
+        return 1
     
-    print("▶️  Método 2 (cache)...")
-    if play_with_options(final_url, server_url, cookie, ["--cache-secs=600"]) == 0:
-        return True
+    print("▶️  Método 2: yt-dlp bridge...")
+    res = try_ytdlp_play(final_url, server_url)
+    if res == 1:
+        return 1
     
-    print("▶️  Método 3 (yt-dlp)...")
-    if try_ytdlp_play(final_url, server_url) == 0:
-        return True
+    print("▶️  Método 3: descargar y reproducir...")
+    res = download_and_play(final_url, server_url)
+    if res == 1:
+        return 1
     
-    print("📥 Descargando...")
-    if download_and_play(final_url, server_url):
-        return True
-    
-    print("❌ Sin servidores")
-    return False
+    return 0
 
 
 def select_from_history():
@@ -1306,10 +1387,11 @@ def select_from_history():
 
 def main():
     load_history()
+    load_ranking()
     
-    print("\n" + "="*60)
-    print("🚀  CLI-ANI v0.666  🚀")
-    print("="*60 + "\n")
+    print("\n" + "="*49)
+    print("🚀  CLI-ANI v0.667  🚀")
+    print("="*49 + "\n")
     
     # Menú principal
     print("1. Buscar anime")
@@ -1339,26 +1421,30 @@ def main():
     if selected:
         anime_title = selected['title']
         anime_url = selected['url']
+        active_base = BASE_URL
     else:
-        try:
-            res = SESSION.get(f"{BASE_URL}/browse", params={'q': query}, timeout=10)
-        except Exception as e:
-            print("❌ Error de conexión")
-            return
-        
-        if not res or not res.text:
-            print("❌ Error: Respuesta vacía")
-            return
-        
-        soup = BeautifulSoup(res.text, 'html.parser')
-        items = soup.select('ul.ListAnimes li')
+        # Intentar con sitio principal, si falla usar móvil
+        base_urls = [BASE_URL, "https://m.animeflv.net"]
         results = []
-        for i in items:
-            h3 = i.find('h3')
-            a = i.find('a')
-            if h3 and a:
-                results.append({'t': h3.get_text(strip=True), 'u': a.get('href', '')})
-
+        active_base = None
+        
+        for base in base_urls:
+            try:
+                res = SESSION.get(f"{base}/browse", params={'q': query}, timeout=10)
+                if res.status_code == 200:
+                    soup = BeautifulSoup(res.text, 'html.parser')
+                    items = soup.select('ul.ListAnimes li')
+                    for i in items:
+                        h3 = i.find('h3')
+                        a = i.find('a')
+                        if h3 and a:
+                            results.append({'t': h3.get_text(strip=True), 'u': a.get('href', '')})
+                    if results:
+                        active_base = base
+                        break
+            except Exception as e:
+                continue
+        
         if not results:
             print("❌ No se encontraron resultados.")
             return
@@ -1372,7 +1458,7 @@ def main():
     
     # Obtener episodios
     try:
-        res_anime = SESSION.get(f"{BASE_URL}{anime_url}", timeout=10)
+        res_anime = SESSION.get(f"{active_base}{anime_url}", timeout=10)
     except Exception as e:
         print("❌ Error al obtener episodios")
         return
@@ -1408,7 +1494,7 @@ def main():
     
     # Obtener servidores
     try:
-        res_ep = SESSION.get(f"{BASE_URL}/ver/{slug}-{target}", timeout=10)
+        res_ep = SESSION.get(f"{active_base}/ver/{slug}-{target}", timeout=10)
         videos_match = re.search(r"var videos = ({.*?});", res_ep.text)
         if not videos_match:
             print("❌ No se encontraron servidores en la página")
@@ -1423,34 +1509,49 @@ def main():
         for s in servers_raw[lang]:
             raw_list.append({'n': s['title'], 'u': s['code'].replace('\\', '')})
 
-    priority = {"YourUpload": 0, "Maru": 1, "Streamwish": 2}
-    sorted_servers = sorted(raw_list, key=lambda x: priority.get(x['n'], 99))
+    def get_server_sort_key(server):
+        name = server['n']
+        rate = get_server_success_rate(name)
+        return -rate
 
-    print(f"\n🎬 Servidores ({len(sorted_servers)}):")
+    sorted_servers = sorted(raw_list, key=get_server_sort_key)
+
+    print(f"\n🎬 Servidores ordenados por tasa de acierto:")
+    print(f"{'#':<4} {'Servidor':<15} {'Tasa':<10} {'Exitos/Total':<15}")
+    print("-" * 46)
     for i, s in enumerate(sorted_servers):
-        print(f"  {i+1}. [{s['n']}]")
+        rate = get_server_success_rate(s['n'])
+        stats = SERVER_RANKING.get(s['n'], {"success": 0, "total": 0})
+        print(f"{i+1:<4} {s['n']:<15} {rate:>6.1f}%    {stats['success']}/{stats['total']:<13}")
+    print("-" * 46)
 
-    # Intentar cada servidor
+    # Intentar cada servidor automáticamente
     for idx, server in enumerate(sorted_servers):
-        # Mensajes cortos para móvil
-        print(f"\n[{server['n']}] ({idx+1}/{len(sorted_servers)})")
+        print(f"\n📡 [{server['n']}] (Intento {idx+1}/{len(sorted_servers)})")
         
-        print("Extrayendo...")
-        final_url, cookie = get_best_link(server)
-        
-        if not final_url:
-            print("❌ Sin URL")
+        try:
+            final_url, cookie = get_best_link(server)
+            
+            if not final_url:
+                record_server_result(server['n'], False)
+                continue
+            
+            if not is_termux():
+                print(f"   📡 {final_url[:40]}...")
+            
+            result = try_all_methods(final_url, server['u'], cookie, server['n'])
+            
+            if result == 1:
+                record_server_result(server['n'], True)
+                mark_episode_viewed(slug, target)
+                print(f"✅ Disfruta el episodio en {server['n']}")
+                break
+            else:
+                record_server_result(server['n'], False)
+                continue
+                
+        except Exception:
             continue
-        
-        # Solo mostrar URL en desktop
-        if not is_termux():
-            print(f"   📡 {final_url[:40]}...")
-        
-        if try_all_methods(final_url, server['u'], cookie):
-            mark_episode_viewed(slug, target)
-            break
-        else:
-            print("❌ Error")
 
 
 if __name__ == "__main__":
