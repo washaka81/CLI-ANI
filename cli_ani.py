@@ -106,7 +106,8 @@ def play_android_mpv(url, referer=None):
             try:
                 result = subprocess.run(
                     ['yt-dlp', '-j', '--no-playlist', video_url],
-                    capture_output=True, text=True, timeout=30
+                    capture_output=True, text=True, timeout=30,
+                    stderr=subprocess.DEVNULL
                 )
                 if result.returncode == 0 and result.stdout.strip():
                     video_data = json.loads(result.stdout.strip())
@@ -116,11 +117,12 @@ def play_android_mpv(url, referer=None):
                     video_url = re.sub(r'^(https?://)+', r'https://', video_url)
                     print(f"   📡 URL desofuscada: {video_url[:60]}...")
             except Exception as e:
-                print(f"   ⚠️ yt-dlp -j falló: {e}")
+                print("   ⚠️ yt-dlp falló")
                 try:
                     result = subprocess.run(
                         ['yt-dlp', '-g', video_url],
-                        capture_output=True, text=True, timeout=30
+                        capture_output=True, text=True, timeout=30,
+                        stderr=subprocess.DEVNULL
                     )
                     if result.returncode == 0 and result.stdout.strip():
                         video_url = result.stdout.strip().split('\n')[0]
@@ -132,14 +134,15 @@ def play_android_mpv(url, referer=None):
             print("   ❌ URL sigue inválida después de desofuscar")
             return False
         
-        # Paquete principal: io.mpv
+        # Paquete principal: io.mpv con actividad correcta
         package = "io.mpv"
+        activity = "mpv.android.MPVActivity"
         
         cmd = [
             'am', 'start', '--user', '0',
             '-a', 'android.intent.action.VIEW',
             '-d', video_url,
-            '-n', f'{package}/.MPVActivity'
+            '-n', f'{package}/{activity}'
         ]
         
         # Añadir User-Agent si está disponible
@@ -151,13 +154,13 @@ def play_android_mpv(url, referer=None):
         cmd.extend(['--es', 'http-header-referer', actual_referer])
 
         print(f"   🚀 Lanzando MPV Android...")
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        result = subprocess.run(cmd, capture_output=True, timeout=15)
         
         if result.returncode == 0:
-            print("   ✅ Video enviado a mpv-android")
+            print("   ✅ Enviado a mpv-android")
             return True
         else:
-            print(f"   ⚠️ io.mpv no funcionó, intentando is.xyz.mpv...")
+            print("   ⚠️ io.mpv falló, intentando is.xyz.mpv...")
         
         # Fallback: is.xyz.mpv
         try:
@@ -165,7 +168,7 @@ def play_android_mpv(url, referer=None):
                 'am', 'start', '--user', '0',
                 '-a', 'android.intent.action.VIEW',
                 '-d', video_url,
-                '-n', 'is.xyz.mpv/.MPVActivity'
+                '-n', 'is.xyz.mpv/mpv.android.MPVActivity'
             ]
             if user_agent:
                 cmd_is.extend(['--es', 'http-header-user-agent', user_agent])
@@ -173,7 +176,7 @@ def play_android_mpv(url, referer=None):
             
             result = subprocess.run(cmd_is, capture_output=True, timeout=15)
             if result.returncode == 0:
-                print("   ✅ Video enviado a is.xyz.mpv")
+                print("   ✅ Enviado a is.xyz.mpv")
                 return True
         except:
             pass
@@ -188,7 +191,7 @@ def play_android_mpv(url, referer=None):
             
         return False
     except Exception as e:
-        print(f"   ❌ Error general: {e}")
+        print("   ❌ Error general")
         return False
 
 
@@ -494,7 +497,7 @@ def try_playwright_streamwish(embed_url, referer="https://www3.animeflv.net/"):
             data = json.loads(result.stdout.strip())
             return data.get('url')
     except Exception as e:
-        print(f"   ⚠️ Playwright error: {e}")
+        print("   ⚠️ Playwright error")
     return None
 
 
@@ -556,7 +559,7 @@ def get_best_link(server):
                     return video_url, None
                     
             except Exception as e:
-                print(f"   ⚠️ YourUpload error: {e}")
+                print("   ⚠️ YourUpload error")
         
         # === Okru (Odnoklassniki) - Optimizado según JSON + código fuente ===
         elif "okru" in s_url.lower() or "ok.ru" in s_url.lower():
@@ -653,7 +656,7 @@ def get_best_link(server):
                             pass
                 
             except Exception as e:
-                print(f"   ⚠️ Okru error: {e}")
+                print("   ⚠️ Okru error")
         
         # === Mail.ru (optimizado según JSON + código fuente) ===
         elif "mail.ru" in s_url.lower():
@@ -708,7 +711,7 @@ def get_best_link(server):
                     return video_url, cookie
                     
             except Exception as e:
-                print(f"   ⚠️ Mail.ru error: {e}")
+                print("   ⚠️ Mail.ru error")
         
         # === Streamwish / SW (optimizado según JSON + código fuente Alfa) ===
         # Dominios: streamwish, embedwish, hlswish, wishfast, playerwish, sfastwish, 
@@ -802,7 +805,7 @@ def get_best_link(server):
                         return result, None
                     
             except Exception as e:
-                print(f"   ⚠️ Streamwish error: {e}")
+                print("   ⚠️ Streamwish error")
         
         # === Streamtape / Stape - Optimizado según JSON + código fuente ===
         # Dominios: streamtape, streamtapeadblock, streamtapeadblockuser, strtape, tapepops
@@ -919,7 +922,7 @@ def get_best_link(server):
                     return result, None
                     
             except Exception as e:
-                print(f"   ⚠️ Streamtape error: {e}")
+                print("   ⚠️ Streamtape error")
         
         # === Netu / HQQ / Waaw / NetuTV - Optimizado según JSON + código fuente ===
         # Dominios: hqq, waaw, netu, waaw1, porntoday, richhioon, woffxxx, veev.to, etc.
@@ -1041,7 +1044,7 @@ def get_best_link(server):
                         pass
                         
             except Exception as e:
-                print(f"   ⚠️ Netu/HQQ error: {e}")
+                print("   ⚠️ Netu/HQQ error")
         
         # === Mega (optimizado según JSON + código fuente) ===
         elif "mega" in s_url.lower():
@@ -1073,7 +1076,7 @@ def get_best_link(server):
                 return url, None
                 
             except Exception as e:
-                print(f"   ⚠️ MEGA error: {e}")
+                print("   ⚠️ MEGA error")
         
         # === Maru (similar estructura a Mail.ru) ===
         elif "maru" in s_url.lower():
@@ -1122,10 +1125,10 @@ def get_best_link(server):
                             return video_url, None
                             
             except Exception as e:
-                print(f"   ⚠️ Maru error: {e}")
+                print("   ⚠️ Maru error")
                 
     except Exception as e:
-        print(f"   ⚠️ Error general: {e}")
+        print("   ⚠️ Error general")
     
     # Fallback: devolver URL original para que yt-dlp la procese
     return s_url, None
@@ -1178,14 +1181,14 @@ def play_with_options(final_url, server_url, cookie=None, extra_opts=None):
 def try_ytdlp_play(final_url, server_url):
     try:
         cmd = ["yt-dlp", "-f", "best", "--no-playlist", "--referer", server_url, "-o", "-", final_url]
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         mpv_cmd = ["mpv", "-", f"--referrer={server_url}", "--cache=yes", "--force-window=yes"]
         mpv = subprocess.Popen(mpv_cmd, stdin=proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if proc.stdout:
             proc.stdout.close()
         return mpv.wait()
     except Exception as e:
-        print(f"   ❌ yt-dlp bridge error: {e}")
+        print("   ❌ yt-dlp bridge error")
         return -1
 
 
@@ -1201,11 +1204,13 @@ def download_and_play(final_url, server_url):
             '-o', temp_file, '--referer', server_url, '--no-playlist', '--buffer-size', '16M', final_url
         ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
+                                stderr=subprocess.DEVNULL)
         
         if result.returncode != 0:
             cmd_alt = ['yt-dlp', '-f', 'best', '-o', temp_file, '--referer', server_url, '--no-playlist', final_url]
-            result = subprocess.run(cmd_alt, capture_output=True, text=True, timeout=600)
+            result = subprocess.run(cmd_alt, capture_output=True, text=True, timeout=600,
+                                    stderr=subprocess.DEVNULL)
             if result.returncode != 0:
                 return False
         
@@ -1242,17 +1247,20 @@ def download_and_play(final_url, server_url):
             '-o', temp_file, '--referer', server_url, '--no-playlist', '--buffer-size', '16M', final_url
         ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
+                                stderr=subprocess.DEVNULL)
         
         if result.returncode != 0:
             cmd_alt = ['yt-dlp', '-f', 'best', '-o', temp_file, '--referer', server_url, '--no-playlist', final_url]
-            result = subprocess.run(cmd_alt, capture_output=True, text=True, timeout=600)
+            result = subprocess.run(cmd_alt, capture_output=True, text=True, timeout=600,
+                                    stderr=subprocess.DEVNULL)
             if result.returncode != 0:
                 return False
         
         if os.path.exists(temp_file):
             print("   ▶️  Reproduciendo archivo local...")
-            subprocess.run(["mpv", temp_file, "--force-window=yes"])
+            subprocess.run(["mpv", temp_file, "--force-window=yes"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             try:
                 os.remove(temp_file)
             except:
@@ -1262,21 +1270,24 @@ def download_and_play(final_url, server_url):
 
 
 def try_all_methods(final_url, server_url, cookie=None):
-    # ANDROID: play_with_options ya incluye el fallback a mpv-android y descarga
+    # ANDROID
     if is_termux():
-        print("Reproduciendo en Android...")
-        return play_with_options(final_url, server_url, cookie) == 0
+        print("▶️  Reproduciendo...")
+        if play_with_options(final_url, server_url, cookie) == 0:
+            return True
+        print("⚠️ Error en reproducción")
+        return False
     
-    # Desktop: intentar múltiples métodos
-    print("   ▶️  Método 1: Reproducción directa...")
+    # Desktop
+    print("▶️  Método 1...")
     if play_with_options(final_url, server_url, cookie) == 0:
         return True
     
-    print("   ▶️  Método 2: Reproducción con cache...")
+    print("▶️  Método 2 (cache)...")
     if play_with_options(final_url, server_url, cookie, ["--cache-secs=600"]) == 0:
         return True
     
-    print("   ▶️  Método 3: yt-dlp bridge...")
+    print("▶️  Método 3 (yt-dlp)...")
     if try_ytdlp_play(final_url, server_url) == 0:
         return True
     
@@ -1284,6 +1295,7 @@ def try_all_methods(final_url, server_url, cookie=None):
     if download_and_play(final_url, server_url):
         return True
     
+    print("❌ Sin método disponible")
     return False
 
 
@@ -1347,7 +1359,7 @@ def main():
         try:
             res = SESSION.get(f"{BASE_URL}/browse", params={'q': query}, timeout=10)
         except Exception as e:
-            print(f"❌ Error de conexión: {e}")
+            print("❌ Error de conexión")
             return
         
         if not res or not res.text:
@@ -1378,7 +1390,7 @@ def main():
     try:
         res_anime = SESSION.get(f"{BASE_URL}{anime_url}", timeout=10)
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print("❌ Error al obtener episodios")
         return
 
     slug_match = re.search(r"var anime_info = \[(.*?)\];", res_anime.text)
@@ -1419,7 +1431,7 @@ def main():
             return
         servers_raw = json.loads(videos_match.group(1))
     except Exception as e:
-        print(f"❌ Error obteniendo servidores: {e}")
+        print("❌ Error obteniendo servidores")
         return
 
     raw_list = []
@@ -1471,4 +1483,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n👋")
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print("\n❌ Error")
