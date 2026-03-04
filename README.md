@@ -1,89 +1,72 @@
-🚀 CLI-ANI: Cliente de Streaming para ver Monos Chinos
-
-  CLI-ANI es una potente herramienta de línea de comandos (CLI) escrita en Python para buscar y reproducir anime
-  directamente desde AnimeFLV. Está diseñada para ser ligera, multiplataforma y altamente eficiente, con soporte
-  especial para Android (Termux).
-
-
-  ✨ Características Principales
-
-
-   * 🔍 Búsqueda Inteligente: Encuentra tus series favoritas rápidamente a través de la terminal.
-   * 📱 Soporte Nativo para Android: Optimizado para funcionar en Termux, permitiendo abrir videos directamente en la
-     app de mpv-android.
-   * 📊 Sistema de Ranking de Servidores: Aprende qué servidores funcionan mejor y los prioriza automáticamente para
-     evitar enlaces caídos.
-   * 📚 Historial y Seguimiento:
-       * Guarda los últimos 10 animes buscados.
-       * Marca visualmente (en verde) los episodios ya vistos.
-   * ⚡ Optimización de Red: Detecta la latencia de tu conexión y ajusta automáticamente el buffer de mpv para una
-     reproducción sin cortes.
-   * 🔓 Desofuscación Avanzada: Soporte para múltiples servidores (YourUpload, Okru, Mail.ru, Streamwish, Streamtape,
-     Netu/HQQ, Mega, y más) mediante técnicas de scraping dinámico.
-   * 🛠️ Verificación de Dependencias: Herramienta integrada para diagnosticar si te falta algún componente necesario
-     según tu sistema operativo.
-
-  📋 Requisitos Proyectados
 
 
 
-  ┌───────────────────────────┬──────────────────────────────────────────────────────────────────┐
-  │ Componente                │ Uso                                                              │
-  ├───────────────────────────┼──────────────────────────────────────────────────────────────────┤
-  │ Python 3.x                │ Lenguaje base.                                                   │
-  │ mpv                       │ Reproductor de video principal.                                  │
-  │ yt-dlp                    │ Extracción de flujos de video.                                   │
-  │ Node.js                   │ (Opcional) Para scraping avanzado de servidores como Streamwish. │
-  │ Requests / BeautifulSoup4 │ Manejo de red y parseo de HTML.                                  │
-  └───────────────────────────┴──────────────────────────────────────────────────────────────────┘
-
-  🚀 Instalación Rápida
-
-  En Linux (Debian/Ubuntu)
+  🌸 CLI-ANI: Tu Rincón de Anime en la Terminal (v0.715)
 
 
-   1 sudo apt update && sudo apt install mpv nodejs
-   2 pip install requests beautifulsoup4 yt-dlp
+  CLI-ANI es un cliente de streaming minimalista y potente diseñado para disfrutar del anime sin distracciones.
+  Desarrollado con un enfoque "Mobile-First", está estrictamente optimizado para la pantalla vertical de Termux
+  (Android) (38 columnas), ofreciendo una experiencia fluida, honesta y elegante desde cualquier CLI.
 
-  En Android (Termux)
-
-
-   1 pkg update && pkg upgrade
-   2 pkg install mpv nodejs curl jq
-   3 pip install yt-dlp requests beautifulsoup4
-   4 termux-setup-storage
-
-  🎮 Modo de Uso
-
-  Simplemente ejecuta el script y sigue las instrucciones en pantalla:
-
-   1 python cli_ani.py
+  ✨ Características que lo hacen único
 
 
-   1. Buscar: Escribe el nombre del anime.
-   2. Seleccionar: Elige el resultado correcto de la lista.
-   3. Episodio: Introduce el número del episodio (o presiona Enter para el último disponible).
-   4. Disfrutar: El script intentará automáticamente el mejor servidor disponible.
+   * 📱 Diseño Móvil Estricto: Interfaz calculada al milímetro para terminales de smartphone. Sin textos cortados, sin
+     tablas rotas.
+   * 📊 Inteligencia de Servidores: Aprende de cada intento. El sistema registra la tasa de éxito real y ordena los
+     servidores del mejor al peor automáticamente.
+   * 📡 Transparencia Radical: Nada de barras de carga falsas. Visualiza el status honesto de yt-dlp y ffmpeg
+     (resolución, kb/s y progreso real) mientras se prepara tu video.
+   * 📚 Memoria y Seguimiento:
+       * Historial dinámico: Accede a tus series recientes en un segundo.
+       * Marcado de episodios: Control visual absoluto con puntos verdes (●) para lo visto y círculos (○) para lo
+         pendiente.
+   * 🌈 Temporizador Deluxe: Confirmación interactiva con cuenta regresiva y degradado de colores (Verde → Amarillo →
+     Rojo).
 
-  ⚖️ Licencia y Aviso Legal
-
-
-  Este proyecto se distribuye bajo la licencia GNU GPLv3.
-
-  AVISO: Este software ha sido creado con fines educativos. El autor no se hace responsable del uso que los usuarios den
-  a la herramienta ni del contenido visualizado. Respeta los derechos de autor y apoya a la industria del anime siempre
-  que sea posible.
-
-  ---
-
-  ❤️ Créditos
+  🛠️ Requisitos
 
 
-  Desarrollado con mucho amor por Washaka (2026).
+   * Python 3.x
+   * yt-dlp (Indispensable para la extracción honesta)
+   * mpv (Reproductor recomendado)
+   * Termux (Para usuarios de Android)
 
-  Si este proyecto te ha servido, ¡no olvides dejar una ⭐ en el repositorio!
+  🚀 Instalación y Uso
+
+
+   1 # Clona este rincón hecho con amor
+   2 git clone https://github.com/tu-usuario/cli-ani.git
+   3 cd cli-ani
+   4
+   5 # Lanza la magia
+   6 python3 cli_ani.py
 
   ---
 
 
-  Hecho por y para la comunidad. Disfruta de tus series favoritas desde la comodidad de tu terminal.
+  📖 Propósitos Educativos y Aviso Legal
+  Este proyecto ha sido desarrollado exclusivamente con fines educativos y de aprendizaje sobre técnicas de web
+  scraping, automatización de procesos en entornos móviles y gestión de flujos de datos multimedia.
+
+  El autor no se hace responsable del uso que los usuarios finales den a esta herramienta. Por favor, apoya siempre el
+  contenido original y a las plataformas oficiales.
+
+
+  ⚖️ Licencia
+  Este software está bajo la licencia GNU General Public License v3.0 (GPLv3). Eres libre de usarlo, modificarlo y
+  distribuirlo, siempre que mantengas la misma libertad para los demás.
+
+  ---
+
+
+  ❤️ Un mensaje del autor
+  Cada línea de código en CLI-ANI fue escrita buscando la perfección en la simplicidad. Espero que este pequeño rincón
+  en tu terminal te traiga tantos momentos felices como a mí desarrollarlo.
+
+  Hecho con amor por Washaka (2026).
+
+  ---
+
+
+  ¿Te gusta el proyecto? ¡Regálale una ⭐ en GitHub!

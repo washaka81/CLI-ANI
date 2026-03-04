@@ -1,1568 +1,232 @@
 # -*- coding: utf-8 -*-
 # =============================================================================
-# CLI-ANI - Cliente de streaming para AnimeFLV
+# CLI-ANI - Edición Final v0.715 GNU/GPLv3
 # =============================================================================
-# Copyright (C) 2026 Washaka
-# 
-# Este programa es software libre: puede redistribuirlo y/o modificarlo
-# bajo los términos de la Licencia Pública General GNU (GPLv3) publicada por
-# la Free Software Foundation, ya sea la versión 3 de la Licencia, o
-# (a su opción) cualquier versión posterior.
-# 
-# Este programa se distribuye con la esperanza de que sea útil,
-# pero SIN NINGUNA GARANTÍA; incluso sin la garantía implícita de
-# COMERCIABILIDAD o APTITUD PARA UN PROPÓSITO PARTICULAR.
-# Vea la Licencia Pública General GNU para más detalles.
-# 
-# Debería haber recibido una copia de la Licencia Pública General GNU
-# junto con este programa. Si no la ha recibido, consulte
-# <https://www.gnu.org/licenses/>.
-# =============================================================================
-#
-# AVISO LEGAL:
-# Este software está diseñado únicamente con fines educativos.
-# El usuario es responsable del uso que haga de este programa.
-# El autor no respalda ni se hace responsable del uso que se le dé
-# al contenido protegido por derechos de autor.
+# Desarrollado por Washaka (2026)
 # =============================================================================
 
-import requests
-import re
-import json
-import subprocess
-import string
-import html
-import sys
-import os
+import requests, re, json, subprocess, string, html, sys, os, time, select, shutil, platform
 from datetime import datetime
 from bs4 import BeautifulSoup
-import platform
-import shutil
 
 BASE_URL = "https://www3.animeflv.net"
 SESSION = requests.Session()
+UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+SESSION.headers.update({'User-Agent': UA, 'Referer': 'https://www3.animeflv.net/'})
 
+MW = 38 # Ancho estricto para Termux
 
 def is_termux():
-    """Detecta si está ejecutándose en Termux/Android"""
-    return (
-        os.environ.get('TERMUX_VERSION') is not None
-        or os.path.exists('/data/data/com.termux')
-        or 'com.termux' in os.environ.get('PREFIX', '')
-    )
+    return (os.environ.get('TERMUX_VERSION') is not None or os.path.exists('/data/data/com.termux'))
 
+# --- INTERFAZ ---
 
-def check_android_players():
-    """Verifica qué reproductores están disponibles en Android"""
-    players = {
-        'com.mpv.android': False,       # MPV Android
-    }
-    
+def get_timer_color(rem):
+    if rem > 7: return "\033[38;5;82m" 
+    if rem > 4: return "\033[38;5;226m"
+    return "\033[38;5;196m"            
+
+def timed_input(prompt, timeout=10):
+    start = time.time()
+    # Limpieza simple de buffer
     try:
-        result = subprocess.run(
-            ['pm', 'list', 'packages'],
-            capture_output=True, text=True, timeout=5
-        )
-        packages = result.stdout
-        for player in players:
-            players[player] = player in packages
-    except:
-        pass
-    
-    return players
+        while True:
+            elapsed = time.time() - start
+            rem = int(timeout - elapsed)
+            if rem <= 0:
+                sys.stdout.write(f"\r{prompt} [\033[91m0s\033[0m]: ")
+                sys.stdout.flush()
+                return ""
+            
+            color = get_timer_color(rem)
+            sys.stdout.write(f"\r{prompt} ({color}{rem}s\033[0m): ")
+            sys.stdout.flush()
+            
+            r, _, _ = select.select([sys.stdin], [], [], 0.5)
+            if r:
+                line = sys.stdin.readline().strip().lower()
+                return line
+    except: return ""
 
+def ask_success():
+    print("\n" + "─"*MW)
+    res = timed_input("❓ ¿Se abrió bien? (S/N)", timeout=10)
+    print("\n" + "─"*MW)
+    return res in ['s', 'si', 'sí', 'y', 'yes']
 
-def get_platform():
-    """Detecta el sistema operativo"""
-    import platform
-    system = platform.system().lower()
-    if system == 'linux':
-        # Verificar si es Termux
-        if is_termux():
-            return 'android'
-        return 'linux'
-    elif system == 'windows':
-        return 'windows'
-    elif system == 'darwin':
-        return 'macos'
-    return 'linux'
+# --- EXTRACTORES ---
 
-
-def play_android_mpv(url, referer=None):
-    """Reproduce usando la app MPV Android optimizado"""
+def get_link(server):
+    name, url = server['n'], server['u']
+    print(f"\n ✨ Conectando: {name}")
     try:
-        video_url = url.strip()
-        video_url = re.sub(r'^(https?://)+', r'https://', video_url)
-        
-        if len(video_url) < 10 or not video_url.startswith('http'):
-            print("   ❌ URL inválida")
-            return False
-        
-        user_agent = None
-        
-        needs_desofuscate = (
-            video_url.endswith('.m3u8') or 'm3u8' in video_url or 
-            'streamwish' in video_url.lower() or 'streamtape' in video_url.lower() or
-            'okru' in video_url.lower() or 'mail.ru' in video_url.lower()
-        )
-        
-        if needs_desofuscate or not video_url.endswith(('.m3u8', '.mp4')):
-            print("   🔄 Desofuscando URL...")
-            try:
-                result = subprocess.run(
-                    ['yt-dlp', '-g', '--no-check-certificate', video_url],
-                    capture_output=True, text=True, timeout=30,
-                    stderr=subprocess.DEVNULL
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    lines = result.stdout.strip().split('\n')
-                    video_url = lines[0]
-                    if len(lines) > 1 and ': ' in lines[1]:
-                        user_agent = lines[1].split(': ', 1)[-1]
-                    video_url = re.sub(r'^(https?://)+', r'https://', video_url)
-                    print(f"   📡 Listo: {video_url[:50]}...")
-            except:
-                pass
-        
-        if not video_url or not video_url.startswith('http'):
-            print("   ❌ URL inválida al final")
-            return False
-        
-        actual_referer = referer or 'https://www3.animeflv.net/'
-        
-        # USER_AGENT global si no hay uno
-        if not user_agent:
-            user_agent = 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36'
-        
-        # Intento 1: io.mpv
-        print("   🎬 Abriendo io.mpv...")
-        cmd1 = [
-            'am', 'start', '--user', '0',
-            '-a', 'android.intent.action.VIEW',
-            '-d', video_url,
-            '-n', 'io.mpv/.MPVActivity',
-            '-f', '0x10000000',
-            '--es', 'http-header-referer', actual_referer,
-            '--es', 'http-header-user-agent', user_agent
-        ]
-        
-        result = subprocess.run(cmd1, capture_output=True, timeout=10, stderr=subprocess.DEVNULL)
-        if result.returncode == 0:
-            return ask_playback_success()
-        
-        # Intento 2: is.xyz.mpv
-        print("   🎬 Abriendo is.xyz.mpv...")
-        cmd2 = [
-            'am', 'start', '--user', '0',
-            '-a', 'android.intent.action.VIEW',
-            '-d', video_url,
-            '-n', 'is.xyz.mpv/.MPVActivity',
-            '-f', '0x10000000',
-            '--es', 'http-header-referer', actual_referer,
-            '--es', 'http-header-user-agent', user_agent
-        ]
-        
-        result = subprocess.run(cmd2, capture_output=True, timeout=10, stderr=subprocess.DEVNULL)
-        if result.returncode == 0:
-            return ask_playback_success()
-        
-        # Intento 3: genérico
-        print("   🎬 Abriendo con VIEW...")
-        cmd3 = [
-            'am', 'start', '--user', '0',
-            '-a', 'android.intent.action.VIEW',
-            '-d', video_url,
-            '-f', '0x10000000'
-        ]
-        result = subprocess.run(cmd3, capture_output=True, timeout=10, stderr=subprocess.DEVNULL)
-        if result.returncode == 0:
-            return ask_playback_success()
-        
-        print("   ❌ Sin método de reproducción")
-        return False
-    except:
-        return False
+        if "yourupload" in url.lower():
+            res = SESSION.get(url.replace("download?file=", "embed/"), timeout=8).text
+            m = re.search(r'og:video" content="([^"]+)"', res) or re.search(r"file:\s*'([^']+)'", res)
+            if m: return (m.group(1) if "vid" in m.group(1) else f"https://www.yourupload.com{m.group(1)}"), None
+        elif any(d in url.lower() for d in ['hqq', 'netu', 'waaw']):
+            res = SESSION.get(url, headers={'Referer': 'https://www3.animeflv.net/'}, timeout=8).text
+            v = re.search(r'(https?://[^\s"\'<>]+\.(?:m3u8|mp4)[^\s"\'<>]*)', res)
+            if v and "1s" not in v.group(1): return v.group(1), None
+    except: pass
+    return url, None
 
+# --- REPRODUCCIÓN (SALIDA HONESTA) ---
 
-def play_with_mpv(url, referer, cookie=None):
-    """Reproduce video con mpv según la plataforma"""
-    platform = get_platform()
+def play(url, server_name, ref=None):
+    termux = is_termux()
+    print(f" 🚀 Lanzando: {server_name}")
     
-    # ANDROID: solo mpv-android
-    if platform == 'android':
-        return play_android_mpv(url, referer)
-    
-    # WINDOWS: usar mpv de Windows
-    elif platform == 'windows':
-        opts = [
-            'mpv', url,
-            '--referrer', referer,
-            '--cache=yes',
-            '--cache-secs=300',
-            '--force-window=yes',
-        ]
-        if cookie:
-            opts.append(f'--http-header-fields=Cookie: {cookie}')
-        result = subprocess.run(opts)
-        if result.returncode == 0:
-            print("✅ Video reproducido exitosamente")
-            return ask_playback_success()
-        return result.returncode == 0
-    
-    # MACOS: usar mpv de macOS
-    elif platform == 'macos':
-        opts = [
-            'mpv', url,
-            '--referrer', referer,
-            '--cache=yes',
-            '--cache-secs=300',
-            '--force-window=yes',
-        ]
-        if cookie:
-            opts.append(f'--http-header-fields=Cookie: {cookie}')
-        result = subprocess.run(opts)
-        if result.returncode == 0:
-            print("✅ Video reproducido exitosamente")
-            return ask_playback_success()
-        return result.returncode == 0
-    
-    # LINUX: usar mpv de Linux
-    else:
-        opts = [
-            'mpv', url,
-            '--referrer', referer,
-            '--cache=yes',
-            '--cache-secs=300',
-            '--force-window=yes',
-        ]
-        if cookie:
-            opts.append(f'--http-header-fields=Cookie: {cookie}')
-        result = subprocess.run(opts)
-        if result.returncode == 0:
-            print("✅ Video reproducido exitosamente")
-            return ask_playback_success()
-        return result.returncode == 0
-
-
-def check_dependencies():
-    """Verifica que todas las dependencias estén instaladas"""
-    missing = []
-    system = platform.system()
-    is_android = is_termux()
-    
-    # Python packages
-    try:
-        import requests
-    except ImportError:
-        missing.append("requests")
-    
-    try:
-        import bs4
-    except ImportError:
-        missing.append("beautifulsoup4")
-    
-    # System binaries
-    if not shutil.which("mpv"):
-        missing.append("mpv")
-    
-    if not shutil.which("yt-dlp"):
-        missing.append("yt-dlp")
-    
-    if not shutil.which("node"):
-        missing.append("node")
-    
-    # Si hay faltantes, mostrar mensaje de error
-    if missing:
-        print("\n" + "="*60)
-        print("❌ FALTAN DEPENDENCIAS")
-        print("="*60)
-        
-        if is_android:
-            print("\n📦 Instalación en TERMUX (Android):")
-            print("-" * 40)
-            print("  pkg update && pkg upgrade")
-            print("  pkg install curl jq mpv nodejs")
-            print("  pip install yt-dlp")
-            print("  npm install playwright && npx playwright install chromium")
+    # STATUS REAL (YT-DLP)
+    if not any(x in url.lower() for x in ['.m3u8', '.mp4']):
+        print(" 📊 INFO TRANSMISIÓN (yt-dlp):")
+        try:
+            # Ejecución directa para ver el progreso real en pantalla
+            cmd = ['yt-dlp', '--no-check-certificate', '--progress', '-g', url]
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            final_url = ""
+            for line in p.stdout:
+                if line.strip().startswith('http'): final_url = line.strip()
+                else: 
+                    # Mostrar progreso en una sola línea
+                    sys.stdout.write(f"\r   ▷ {line.strip()[:MW-6]}")
+                    sys.stdout.flush()
+            p.wait()
+            if final_url: url = final_url
             print("")
-            print("  # Para reproducir en Android:")
-            print("  termux-setup-storage")
-            
-        elif system == "Linux":
-            print("\n📦 Instalación en LINUX:")
-            print("-" * 40)
-            if "requests" in missing or "beautifulsoup4" in missing:
-                print("  pip install requests beautifulsoup4")
-            if "mpv" in missing:
-                print("  # Debian/Ubuntu: sudo apt install mpv")
-                print("  # Arch Linux: sudo pacman -S mpv")
-            if "yt-dlp" in missing:
-                print("  pip install yt-dlp")
-            if "node" in missing:
-                print("  # Debian/Ubuntu: sudo apt install nodejs npm")
-                print("  npm install playwright && npx playwright install chromium")
-        
-        elif system == "Darwin":
-            print("\n📦 Instalación en MACOS:")
-            print("-" * 40)
-            if "requests" in missing or "beautifulsoup4" in missing:
-                print("  pip3 install requests beautifulsoup4")
-            if "mpv" in missing:
-                print("  brew install mpv")
-            if "yt-dlp" in missing:
-                print("  brew install yt-dlp")
-            if "node" in missing:
-                print("  brew install node")
-                print("  npm install playwright && npx playwright install chromium")
-        
-        elif system == "Windows":
-            print("\n📦 Instalación en WINDOWS:")
-            print("-" * 40)
-            if "requests" in missing or "beautifulsoup4" in missing:
-                print("  pip install requests beautifulsoup4")
-            if "mpv" in missing:
-                print("  Descargar mpv desde: https://mpv.io/installation/")
-            if "yt-dlp" in missing:
-                print("  pip install yt-dlp")
-            if "node" in missing:
-                print("  Descargar Node.js desde: https://nodejs.org/")
-                print("  npm install playwright && npx playwright install chromium")
-        
-        print("\n" + "="*60)
-        return False
-    
-    # Mostrar plataforma detectada
-    if is_android:
-        print("\n📱 Detectado: Termux/Android")
-    else:
-        print(f"\n💻 Detectado: {system}")
-    
-    return True
+        except: pass
 
-
-def get_network_speed():
-    """Detecta la velocidad de red y retorna configuración de buffer recomendada"""
-    try:
-        import time
-        test_url = "https://www.google.com/generate_204"
-        start = time.time()
-        SESSION.get(test_url, timeout=5)
-        latency = (time.time() - start) * 1000  # ms
-        
-        # Estimar velocidad según latencia y tipo de conexión
-        if is_termux():
-            # En Termux, asumimos conexión móvil
-            if latency < 100:
-                # 4G/LTE bueno
-                return {
-                    "cache_secs": 600,      # 10 min cache
-                    "stream_buffer": "32MiB",
-                    "demuxer_bytes": "150MiB",
-                    "reconnect": True,
-                    "priority": "alto"
-                }
-            else:
-                # 3G o conexión lenta
-                return {
-                    "cache_secs": 1200,     # 20 min cache
-                    "stream_buffer": "64MiB",
-                    "demuxer_bytes": "300MiB",
-                    "reconnect": True,
-                    "priority": "bajo"
-                }
-        else:
-            # Desktop
-            if latency < 50:
-                # Fibra/GB excelente
-                return {
-                    "cache_secs": 300,      # 5 min
-                    "stream_buffer": "16MiB",
-                    "demuxer_bytes": "100MiB",
-                    "reconnect": False,
-                    "priority": "excelente"
-                }
-            elif latency < 100:
-                # Cable/ADSL bueno
-                return {
-                    "cache_secs": 600,      # 10 min
-                    "stream_buffer": "32MiB",
-                    "demuxer_bytes": "200MiB",
-                    "reconnect": True,
-                    "priority": "alto"
-                }
-            else:
-                # Conexión lenta
-                return {
-                    "cache_secs": 1200,     # 20 min
-                    "stream_buffer": "64MiB",
-                    "demuxer_bytes": "400MiB",
-                    "reconnect": True,
-                    "priority": "bajo"
-                }
-    except:
-        #默认值 si falla la detección
-        if is_termux():
-            return {
-                "cache_secs": 600,
-                "stream_buffer": "32MiB",
-                "demuxer_bytes": "150MiB",
-                "reconnect": True,
-                "priority": "medio"
-            }
-        else:
-            return {
-                "cache_secs": 300,
-                "stream_buffer": "16MiB",
-                "demuxer_bytes": "100MiB",
-                "reconnect": False,
-                "priority": "medio"
-            }
-
-
-SESSION = requests.Session()
-USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-SESSION.headers.update({'User-Agent': USER_AGENT, 'Referer': 'https://www3.animeflv.net/'})
-
-HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'history.json')
-
-HISTORY = {"animes": [], "vistos": {}}
-
-def load_history():
-    global HISTORY
-    try:
-        if os.path.exists(HISTORY_FILE):
-            with open(HISTORY_FILE, 'r') as f:
-                HISTORY = json.load(f)
-    except:
-        pass
-
-def save_history():
-    try:
-        with open(HISTORY_FILE, 'w') as f:
-            json.dump(HISTORY, f)
-    except:
-        pass
-
-def add_to_history(title, url, slug):
-    global HISTORY
-    # Remover si ya existe
-    HISTORY["animes"] = [a for a in HISTORY["animes"] if a['slug'] != slug]
-    # Agregar al inicio
-    HISTORY["animes"].insert(0, {
-        "title": title,
-        "url": url,
-        "slug": slug,
-        "timestamp": datetime.now().isoformat()
-    })
-    # Mantener solo 10
-    HISTORY["animes"] = HISTORY["animes"][:10]
-    save_history()
-
-def mark_episode_viewed(slug, episode):
-    # Convertir a string para consistencia
-    episode_str = str(episode)
-    if slug not in HISTORY["vistos"]:
-        HISTORY["vistos"][slug] = []
-    if episode_str not in HISTORY["vistos"][slug]:
-        HISTORY["vistos"][slug].append(episode_str)
-        save_history()
-
-def is_episode_viewed(slug, episode):
-    # Convertir a string para comparar correctamente
-    episode_str = str(episode)
-    return episode_str in HISTORY.get("vistos", {}).get(slug, [])
-
-def ask_playback_success():
-    """Pregunta al usuario si el video funcionó"""
-    import sys
-    try:
-        sys.stdout.flush()
-        sys.stderr.flush()
-        print("")
-        response = input("❓ ¿Funcionó el video? (s/n): ").strip().lower()
-        return response in ['s', 'si', 'sí', 'y', 'yes']
-    except:
-        return False
-
-
-RANKING_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'server_ranking.json')
-
-SERVER_RANKING = {}
-
-def load_ranking():
-    global SERVER_RANKING
-    try:
-        if os.path.exists(RANKING_FILE):
-            with open(RANKING_FILE, 'r') as f:
-                SERVER_RANKING = json.load(f)
-    except:
-        pass
-
-def save_ranking():
-    try:
-        with open(RANKING_FILE, 'w') as f:
-            json.dump(SERVER_RANKING, f, indent=2)
-    except:
-        pass
-
-def record_server_result(server_name, success):
-    """Registra el resultado de un servidor"""
-    if server_name not in SERVER_RANKING:
-        SERVER_RANKING[server_name] = {"success": 0, "fail": 0, "total": 0}
-    
-    SERVER_RANKING[server_name]["total"] += 1
-    if success:
-        SERVER_RANKING[server_name]["success"] += 1
-    else:
-        SERVER_RANKING[server_name]["fail"] += 1
-    save_ranking()
-
-def get_server_success_rate(server_name):
-    """Retorna la tasa de éxito de un servidor (0-100)"""
-    if server_name not in SERVER_RANKING:
-        return 50
-    stats = SERVER_RANKING[server_name]
-    if stats["total"] == 0:
-        return 50
-    return (stats["success"] / stats["total"]) * 100
-
-def print_ranking():
-    """Muestra el ranking de servidores"""
-    if not SERVER_RANKING:
-        print("\n📊 Sin datos de ranking todavía")
-        return
-    
-    print("\n📊 Ranking de servidores:")
-    sorted_servers = sorted(
-        SERVER_RANKING.items(),
-        key=lambda x: (x[1]["success"] / x[1]["total"] * 100) if x[1]["total"] > 0 else 50,
-        reverse=True
-    )
-    for name, stats in sorted_servers:
-        rate = (stats["success"] / stats["total"] * 100) if stats["total"] > 0 else 50
-        print(f"  {name}: {rate:.1f}% ({stats['success']}/{stats['total']})")
-
-def print_history():
-    if not HISTORY["animes"]:
-        return []
-    print("\n📚 Historial (últimos 10):")
-    for i, a in enumerate(HISTORY["animes"]):
-        print(f"  {i+1}. {a['title']}")
-    return HISTORY["animes"]
-
-
-def try_playwright_streamwish(embed_url, referer="https://www3.animeflv.net/"):
-    try:
-        import subprocess
-        import json
-        result = subprocess.run(
-            ['node', 'streamwish_scraper.js', embed_url, referer],
-            capture_output=True, text=True, timeout=60
-        )
-        if result.returncode == 0:
-            data = json.loads(result.stdout.strip())
-            return data.get('url')
-    except Exception as e:
-        print("   ⚠️ Playwright error")
-    return None
-
-
-def int2base(x, base):
-    chars = string.digits + string.ascii_letters
-    if x < base:
-        return chars[x]
-    return int2base(x // base, base) + chars[x % base]
-
-
-def get_best_link(server):
-    """Extrae la URL directa del servidor con técnicas avanzadas de desofuscación"""
-    s_name = server['n']
-    s_url = server['u']
-    
-    print(f"   🔍 Extrayendo de [{s_name}]...")
-    
-    try:
-        # === YourUpload (optimizado según JSON + código fuente) ===
-        if "yourupload" in s_url.lower():
-            try:
-                # Headers como en el código fuente
-                headers = {
-                    'Referer': 'https://www3.animeflv.net/',
-                    'User-Agent': USER_AGENT
-                }
-                
-                # Si es URL de download, convertir a embed
-                if "download" in s_url.lower():
-                    s_url = s_url.replace("download?file=", "embed/")
-                
-                res = SESSION.get(s_url, timeout=8, headers=headers).text
-                
-                # Verificar si el archivo fue borrado
-                if "File was deleted" in res or "File not found" in res:
-                    print("   ⚠️ YourUpload: Archivo borrado")
-                    return None, None
-                
-                # Buscar og:video (método principal del código fuente)
-                url = re.search(r'<meta property="og:video" content="([^"]+)"', res)
-                if not url:
-                    # Buscar file: '...' (del código fuente)
-                    url = re.search(r"file:\s*'([^']+)'", res)
-                if not url:
-                    # Buscar file: "..." 
-                    url = re.search(r'file:\s*"([^"]+)"', res)
-                if not url:
-                    # Buscar src en video
-                    url = re.search(r'src:\s*"([^"]+\.mp4[^"]*)"', res)
-                
-                if url:
-                    video_url = url.group(1)
-                    
-                    # Si es vidcache, no necesita dominio
-                    if "vidcache" not in video_url:
-                        video_url = f"https://www.yourupload.com{video_url}"
-                    
-                    # Devolver con Referer
-                    return video_url, None
-                    
-            except Exception as e:
-                print("   ⚠️ YourUpload error")
-        
-        # === Okru (Odnoklassniki) - Optimizado según JSON + código fuente ===
-        elif "okru" in s_url.lower() or "ok.ru" in s_url.lower():
-            try:
-                headers = {
-                    'User-Agent': USER_AGENT,
-                    'Referer': 'https://www3.animeflv.net/',
-                    'Accept': '*/*',
-                }
-                
-                # Normalizar URL según JSON
-                url = s_url
-                
-                # Convertir diferentes formatos de URL okru
-                # ok.ru/videoembed/xxx -> https://ok.ru/videoembed/xxx
-                # www.ok.ru/videoembed/xxx -> https://ok.ru/videoembed/xxx
-                if "ok.ru" not in url and "okru" in url.lower():
-                    url = url.replace("okru", "ok.ru")
-                
-                # Patrones de URL según JSON
-                url_patterns = [
-                    (r'ok\.ru/videoembed/(\d+)', r'https://ok.ru/videoembed/\1'),
-                    (r'okru\.link/v2/embed_vf_s\.html\?t=([a-zA-Z0-9_.]+)', r'https://okru.link/v2/embed_vf_s.html?t=\1'),
-                    (r'okru\.link/embed\.html\.t=(\w+)', r'https://okru.link/embed.html?t=\1'),
-                ]
-                
-                for pattern, replacement in url_patterns:
-                    url = re.sub(pattern, replacement, url)
-                
-                # Headers como en código fuente
-                kwargs = {
-                    'set_tls': True,
-                    'set_tls_min': True,
-                    'timeout': 8,
-                }
-                
-                res = SESSION.get(url, timeout=10, headers=headers)
-                
-                # Verificar restricciones de copyright (código fuente)
-                if "copyrightsRestricted" in res.text or "COPYRIGHTS_RESTRICTED" in res.text or "LIMITED_ACCESS" in res.text:
-                    print("   ⚠️ Okru: Video eliminado por copyright")
-                    return None, None
-                
-                # Verificar si no existe (código fuente)
-                if "notFound" in res.text or "u0026urls" not in res.text:
-                    print("   ⚠️ Okru: Video no encontrado")
-                    return None, None
-                
-                # Decodificar HTML entities
-                data = html.unescape(res.text).replace('\\', '')
-                
-                # Extraer URLs de video (código fuente)
-                video_urls = []
-                for name, video_url in re.findall(r'\{"name":"([^"]+)","url":"([^"]+)"\}', data):
-                    video_url = video_url.replace("%3B", ";").replace("u0026", "&")
-                    # Ignorar mobile
-                    if "mobile" not in name.lower():
-                        video_urls.append((name, video_url))
-                
-                # Si encontramos videos, devolver el de mejor calidad
-                if video_urls:
-                    # Priorizar calidades mayores
-                    video_urls.sort(key=lambda x: x[0], reverse=True)
-                    return video_urls[0][1], None
-                
-                # Manejo especial para okru.link (código fuente)
-                if "okru.link/v2" in url:
-                    v = re.search(r't=([\w.]+)', url)
-                    if v:
-                        try:
-                            post_data = {"video": v.group(1)}
-                            api_res = SESSION.post(
-                                "https://apizz.okru.link/decoding",
-                                json=post_data,
-                                headers={"Content-Type": "application/x-www-form-urlencoded", "Origin": url}
-                            ).json()
-                            if api_res.get("url"):
-                                return api_res["url"], None
-                        except:
-                            pass
-                
-                # Manejo para okru.link/embed
-                if "okru.link/embed" in url:
-                    v = re.search(r't=(\w+)', url)
-                    if v:
-                        try:
-                            api_res = SESSION.get(
-                                f"https://okru.link/details.php?v={v.group(1)}",
-                                timeout=8
-                            ).json()
-                            if api_res.get("file"):
-                                return api_res["file"], None
-                        except:
-                            pass
-                
-            except Exception as e:
-                print("   ⚠️ Okru error")
-        
-        # === Mail.ru (optimizado según JSON + código fuente) ===
-        elif "mail.ru" in s_url.lower():
-            try:
-                headers = {
-                    'User-Agent': USER_AGENT,
-                    'Referer': 'https://www3.animeflv.net/'
-                }
-                
-                # URLs válidas según JSON
-                # http://videoapi.my.mail.ru/videos/embed/mail/inbox/xxx/_myvideo/xxx.html
-                # http://my.mail.ru/+/video/meta/xxx
-                
-                vurl = s_url
-                
-                # Si es URL con /+/, usar directamente
-                if "/+/" not in s_url:
-                    # Obtener la página para procesar
-                    res = SESSION.get(s_url, timeout=8, headers=headers)
-                    
-                    # Verificar si el video no existe (código fuente)
-                    if res.status_code == 404 or '"error":"video_not_found"' in res.text or '"error":"Can\'t find VideoInstance"' in res.text:
-                        print("   ⚠️ Mail.ru: Video no encontrado")
-                        return None, None
-                    
-                    # Buscar metadataUrl
-                    meta = re.search(r'"metadataUrl"\s*:\s*"([^"]+)"', res.text)
-                    if meta:
-                        m_url = meta.group(1)
-                        if m_url.startswith('//'):
-                            m_url = "https:" + m_url
-                        vurl = m_url
-                
-                # Obtener datos JSON con la cookie video_key
-                response = SESSION.get(vurl, timeout=8, headers=headers)
-                datos = response.json()
-                
-                # Obtener cookie video_key (código fuente)
-                cookie_header = response.headers.get('set-cookie', '')
-                cookie_match = re.search(r'(video_key=[a-f0-9]+)', cookie_header)
-                video_key = cookie_match.group(1) if cookie_match else SESSION.cookies.get('video_key')
-                
-                if datos.get('videos') and len(datos['videos']) > 0:
-                    video_url = datos['videos'][0]['url']
-                    
-                    # Formar URL con cookie (como en código fuente)
-                    if not video_url.startswith('http'):
-                        video_url = "http:" + video_url
-                    
-                    # Cookie especial para Mail.ru
-                    cookie = f"video_key={video_key}"
-                    return video_url, cookie
-                    
-            except Exception as e:
-                print("   ⚠️ Mail.ru error")
-        
-        # === Streamwish / SW (optimizado según JSON + código fuente Alfa) ===
-        # Dominios: streamwish, embedwish, hlswish, wishfast, playerwish, sfastwish, 
-        # wishembed, cdnwish, obeywish, flastwish, jodwish, swdyu, strwish, swhoi,
-        # jwplayerhls, wishonly, cdnstream, cybervynx, swishsrv, swiftplayers, etc.
-        elif any(d in s_url.lower() for d in ['streamwish', 'embedwish', 'hlswish', 'awish', 'dwish', 
-                                                'streamwish.to', 'streamwish.com', 'wishfast', 'playerwish',
-                                                'sfastwish', 'wishembed', 'cdnwish', 'obeywish', 'flastwish',
-                                                'jodwish', 'swdyu', 'strwish', 'swhoi', 'jwplayerhls', 'wishonly',
-                                                'cdnstream', 'cybervynx', 'swishsrv', 'swiftplayers', '74k',
-                                                'ghbrisk', 'dhcplay', 'hgplaycdn', 'hgbazooka', 'dumbalag',
-                                                'hglink', 'eliota', 'asnwish', 'haxloppd', 'wishonly.site',
-                                                'iplayerhls.com', 'doodporn.xyz']):
-            try:
-                # Headers como en código fuente Alfa
-                headers = {
-                    'User-Agent': USER_AGENT,
-                    'Referer': 'https://www3.animeflv.net/',
-                    'Accept': '*/*',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                }
-                
-                # Manejar |Referer= en la URL (como en código fuente)
-                actual_url = s_url
-                if "|Referer=" in s_url:
-                    parts = s_url.split("|Referer=")
-                    actual_url = parts[0]
-                    headers['Referer'] = parts[1] if len(parts) > 1 else headers['Referer']
-                
-                res = SESSION.get(actual_url, timeout=10, headers=headers)
-                
-                # Verificar si el video no existe o está restringido (código fuente)
-                if res.status_code == 404 or "no longer available" in res.text or "Not Found" in res.text:
-                    print("   ⚠️ Streamwish: Video no disponible")
-                    return None, None
-                if "restricted for this domain" in res.text:
-                    print("   ⚠️ Streamwish: Restringido en tu país")
-                    return None, None
-                
-                # Intentar desofuscación packer (versión Alfa)
-                try:
-                    pack = re.search(r'p,a,c,k,e,d.*?</script>', res.text, re.DOTALL)
-                    if pack:
-                        # Usar método manual similar a jsunpack
-                        pack_text = pack.group()
-                        pack_match = re.search(r"}\('(.*?)',(\d+),(\d+),'(.*?)'\.split", pack_text)
-                        if pack_match:
-                            p, a, c, k = pack_match.groups()
-                            a, c = int(a), int(c)
-                            k = k.split('|')
-                            d = {}
-                            for i in range(c):
-                                key = int2base(i, a)
-                                value = k[i] if (i < len(k) and k[i]) else int2base(i, a)
-                                d[key] = value
-                            unpacked = re.sub(r'\b(\w+)\b', lambda m: d.get(m.group(1), m.group(1)), p)
-                            
-                            # Buscar m3u8 (prioridad: hls2 para evitar hls4)
-                            m3u8 = re.search(r'(?:file|"hls2"):"([^"]+\.m3u8[^"]*)"', unpacked)
-                            if not m3u8:
-                                m3u8 = re.search(r'(?:file|hls):"([^"]+\.m3u8[^"]*)"', unpacked)
-                            if m3u8:
-                                return m3u8.group(1), None
-                except:
-                    pass
-                
-                # Intentar desofuscación packer manual (versión anterior)
-                pack_match = re.search(r"eval\(function\(p,a,c,k,e,d\).*?}\('(.*?)',(\d+),(\d+),'(.*?)'\.split", res.text, re.DOTALL)
-                if pack_match:
-                    p, a, c, k = pack_match.groups()
-                    a, c, k = int(a), int(c), k.split('|')
-                    d = {int2base(i, a): k[i] if (i < len(k) and k[i]) else int2base(i, a) for i in range(c)}
-                    unpacked = re.sub(r'\b(\w+)\b', lambda m: d.get(m.group(1), m.group(1)), p)
-                    m3u8 = re.search(r'(?:file|"hls2"|hls):"([^"]+\.m3u8[^"]*)"', unpacked.replace('\\', ''))
-                    if m3u8:
-                        return m3u8.group(1), None
-                
-                # Buscar subtítulos VTT
-                subtitles = re.findall(r'file:"([^"]+\.vtt[^"]*)",label:"([^"]+)"', res.text)
-                
-                # Buscar m3u8 directamente en el HTML/JS
-                m3u8_direct = re.search(r'(https?://[^\s"\'<>]+\.m3u8[^\s"\'<>]*)', res.text)
-                if m3u8_direct:
-                    return m3u8_direct.group(1), None
-                
-                # Verificar si es la versión nueva (con JavaScript)
-                if 'main.js' in res.text or 'player' in res.text.lower():
-                    print("   ⚠️ Streamwish JS detectado, intentando Playwright...")
-                    result = try_playwright_streamwish(actual_url)
-                    if result:
-                        return result, None
-                    
-            except Exception as e:
-                print("   ⚠️ Streamwish error")
-        
-        # === Streamtape / Stape - Optimizado según JSON + código fuente ===
-        # Dominios: streamtape, streamtapeadblock, streamtapeadblockuser, strtape, tapepops
-        elif any(d in s_url.lower() for d in ['streamtape', 'streamtapeadblock', 'streamtapeadblockuser', 
-                                                'strtape', 'tapepops', 'stape']):
-            try:
-                # Normalizar URL según JSON
-                url = s_url
-                
-                # Convertir diferentes formatos de URL según JSON
-                # https://streamtape.com/e/xxx
-                url_patterns = [
-                    (r'streamtape(?:adblock|adblockuser)?\.cloud/(\w+)', r'https://streamtape.com/e/\1'),
-                    (r'streamtape\.(\w{2,4})/(v|e)/(\w+)', r'https://streamtape.com/e/\3'),
-                    (r'strtape\.(\w{2,4})/(\w+)', r'https://streamtape.com/e/\2'),
-                    (r'tapepops\.(\w{2,4})/(\w+)', r'https://streamtape.com/e/\2'),
-                ]
-                
-                for pattern, replacement in url_patterns:
-                    url = re.sub(pattern, replacement, url)
-                
-                headers = {
-                    'User-Agent': USER_AGENT,
-                    'Referer': 'https://www3.animeflv.net/',
-                }
-                
-                res = SESSION.get(url, timeout=10, headers=headers)
-                
-                # Verificar si video no existe (código fuente)
-                if "Video not found" in res.text:
-                    print("   ⚠️ Streamtape: Video no encontrado")
-                    return None, None
-                
-                # Verificar si está en conversión (código fuente)
-                if "Video is converting" in res.text:
-                    print("   ⚠️ Streamtape: Video en conversión, intenta más tarde")
-                    return None, None
-                
-                # Método del código fuente: buscar innerHTML y evaluar con js2py
-                find_url_matches = re.findall(r'innerHTML = ([^;]+)', res.text)
-                
-                if find_url_matches:
-                    # Último match suele ser el correcto
-                    find_url = find_url_matches[-1]
-                    
-                    # Intentar evaluar el JavaScript
-                    try:
-                        # Simular la evaluación de js2py
-                        # El código usa: possible_url = js2py.eval_js(find_url)
-                        
-                        # Buscar patrones comunes en el HTML
-                        js_patterns = [
-                            r"innerHTML\s*=\s*[\"'](.+?)[\"']",
-                            r"src\s*=\s*[\"'](.+?)[\"']",
-                            r"videojs\([^)]+\)\.src\({[\"']src[\"']:\s*[\"'](.+?)[\"']",
-                        ]
-                        
-                        for js_pattern in js_patterns:
-                            js_match = re.search(js_pattern, res.text)
-                            if js_match:
-                                possible_url = js_match.group(1)
-                                
-                                # Si es una expresión JS, simplificarla
-                                if ' + ' in possible_url or "'" in possible_url:
-                                    # Buscar las variables
-                                    var_match = re.findall(r'var\s+(\w+)\s*=\s*["\']([^"\']+)["\']', res.text)
-                                    vars_dict = dict(var_match)
-                                    
-                                    # Reemplazar variables en la expresión
-                                    for var_name, var_value in vars_dict.items():
-                                        possible_url = possible_url.replace(var_name, var_value)
-                                    
-                                    # Limpiar comillas extras
-                                    possible_url = possible_url.strip("'\" +")
-                                
-                                if possible_url.startswith('//'):
-                                    possible_url = 'https:' + possible_url
-                                elif possible_url.startswith('/'):
-                                    possible_url = 'https://streamtape.com' + possible_url
-                                elif not possible_url.startswith('http'):
-                                    possible_url = 'https:' + possible_url
-                                
-                                # Obtener la URL final con redirect
-                                try:
-                                    final_res = SESSION.get(possible_url, headers=headers, allow_redirects=False)
-                                    if final_res.headers.get('location'):
-                                        return final_res.headers['location'], None
-                                    return possible_url, None
-                                except:
-                                    return possible_url, None
-                    except Exception as e:
-                        pass
-                
-                # Fallback: buscar directamente en el HTML
-                patterns = [
-                    r"document\.getElementById\(['\"]videojs[^'\"]+['\"]\)\.src\s*=\s*['\"]([^'\"]+)['\"]",
-                    r"videojs\([^)]+\)\.src\s*\(\s*\{[\"']src[\"']:\s*[\"']([^\"']+)[\"']",
-                    r"src:\s*['\"]([^'\"]+\.(?:mp4|m3u8)[^'\"]*)['\"]",
-                    r'file:\s*"([^"]+\.m3u8[^"]*)"',
-                    r"src\s*=\s*['\"]([^'\"]+streamtape[^'\"]+)['\"]",
-                ]
-                
-                for pattern in patterns:
-                    m = re.search(pattern, res.text)
-                    if m:
-                        video_url = m.group(1)
-                        if video_url.startswith('//'):
-                            video_url = 'https:' + video_url
-                        return video_url, None
-                
-                # Fallback: intentar con Playwright
-                result = try_playwright_streamwish(url)
-                if result:
-                    return result, None
-                    
-            except Exception as e:
-                print("   ⚠️ Streamtape error")
-        
-        # === Netu / HQQ / Waaw / NetuTV - Optimizado según JSON + código fuente ===
-        # Dominios: hqq, waaw, netu, waaw1, porntoday, richhioon, woffxxx, veev.to, etc.
-        elif any(d in s_url.lower() for d in ['hqq.tv', 'hqq', 'netu', 'waaw', 'waaw1', 'waaw2', 
-                                                 'porntoday', 'richhioon', 'woffxxx', 'veev.to',
-                                                 'player.megaxserie', 'netutv', 'netu.tv']):
-            try:
-                # Normalizar URL según JSON
-                url = s_url
-                
-                # Convertir diferentes formatos de URL
-                url = url.replace("/watch_video.php?v=", "/player/embed_player.php?vid=")
-                url = url.replace("https://netu.tv/", "https://hqq.to/")
-                url = url.replace("https://waaw.tv/", "https://hqq.to/")
-                url = url.replace("http://netu.tv/", "http://hqq.watch/")
-                url = url.replace("http://waaw.tv/", "http://hqq.watch/")
-                
-                # Headers como en código fuente
-                headers = {
-                    'User-Agent': USER_AGENT,
-                    'Referer': 'https://www3.animeflv.net/',
-                }
-                
-                # Verificar si hay hash
-                if "hash=" in url:
-                    data = SESSION.get(url, timeout=10).text
-                    import urllib.parse
-                    data = urllib.parse.unquote(data)
-                    video_id = re.search(r"vid':'([^']+)'", data)
-                    if video_id:
-                        url = f"https://hqq.to/player/embed_player.php?vid={video_id.group(1)}"
-                
-                res = SESSION.get(url, timeout=10, headers=headers)
-                
-                # Verificar si el archivo no existe
-                if "var userid = '';" in res.text.lower():
-                    print("   ⚠️ Netu: Video no existe o fue borrado")
-                    return None, None
-                
-                # Intentar desofuscar JavaScript (jswise del código fuente)
-                js_wise_match = re.search(r"<script type=[\"']text/javascript[\"']>\s*;?(eval.*?)</script>", res.text, re.DOTALL)
-                
-                if js_wise_match:
-                    # Aquí iría la función jswise pero es compleja
-                    # Intentamos con la API directamente
-                    pass
-                
-                # Intentar con la API de hqq (código fuente)
-                video_id = re.search(r'embed_player\.php\?vid=([a-zA-Z0-9]+)', url)
-                if video_id:
-                    # Obtener IP primero (como en código fuente)
-                    import random
-                    alea = str(random.random())[2:]
-                    
-                    ip_url = f"https://hqq.to/player/ip.php?type=json&rand={alea}"
-                    try:
-                        ip_res = SESSION.get(ip_url, timeout=5, headers=headers).json()
-                        ip_addr = ip_res.get("ip", "")
-                        
-                        # Buscar la URL de redirección
-                        redirect_match = re.search(r'self\.location\.replace\("([^)]+)\)"', res.text)
-                        if redirect_match:
-                            redirect_url = redirect_match.group(1)
-                            redirect_url = redirect_url.replace('"+rand+"', alea)
-                            redirect_url = redirect_url.replace('"+data.ip+"', ip_addr)
-                            redirect_url = redirect_url.replace('"+need_captcha+"', "0")
-                            redirect_url = redirect_url.replace('"+token', "")
-                            
-                            # Obtener el JavaScript final
-                            final_url = "https://hqq.to" + redirect_url
-                            final_res = SESSION.get(final_url, timeout=10, headers=headers)
-                            
-                            # Extraer link del JSON final
-                            codigo_js = re.findall(r'document\.write\(unescape\("([^"]+)', final_res.text)
-                            
-                            if codigo_js:
-                                import urllib.parse
-                                js_aux = urllib.parse.unquote(codigo_js[0])
-                                at = re.search(r'var at = "([^"]+)"', js_aux)
-                                
-                                if at:
-                                    # Obtener variables
-                                    var_match = re.findall(r'var ([a-zA-Z0-9]+) = "([^"]+)";', final_res.text)
-                                    vars_dict = dict(var_match)
-                                    
-                                    link_1 = vars_dict.get('link_1', '')
-                                    server_2 = vars_dict.get('server_2', '')
-                                    vid = vars_dict.get('vid', '')
-                                    
-                                    if link_1 and vid:
-                                        # Construir URL final del video
-                                        m3u8_url = f"https://hqq.to/player/get_md5.php?ver=2&at={at.group(1)}&adb=0&b=1&link_1={link_1}&server_2={server_2}&vid={vid}&ext=.mp4.m3u8"
-                                        return m3u8_url, None
-                    except Exception as e:
-                        pass
-                
-                # Fallback: buscar directamente en el HTML
-                patterns = [
-                    r'src:\s*"([^"]+\.mp4[^"]*)"',
-                    r'file:\s*"([^"]+\.m3u8[^"]*)"',
-                    r'source\s+src="([^"]+)"',
-                    r'(https?://[^\s"\'<>]+\.m3u8[^\s"\'<>]*)',
-                ]
-                for pattern in patterns:
-                    m = re.search(pattern, res.text)
-                    if m:
-                        return m.group(1), None
-                
-                # Último intento: API simple
-                if video_id:
-                    api_url = f"https://hqq.tv/player/get_sources/{video_id.group(1)}"
-                    try:
-                        api_res = SESSION.get(api_url, timeout=10, headers=headers).json()
-                        if api_res.get('result') == 'ok':
-                            sources = api_res.get('sources', [])
-                            if sources:
-                                return sources[0].get('file'), None
-                    except:
-                        pass
-                        
-            except Exception as e:
-                print("   ⚠️ Netu/HQQ error")
-        
-        # === Mega (optimizado según JSON + código fuente) ===
-        elif "mega" in s_url.lower():
-            try:
-                # Normalizar URL según JSON
-                url = s_url
-                
-                # Convertir diferentes formatos de URL MEGA
-                url_patterns = [
-                    (r'mega\.nz/file/([^\#]+)\#([A-Za-z0-9-_]+)', r'https://mega.nz/#!\1!\!\2'),
-                    (r'mega\.nz/embed/([A-Za-z0-9\-_]+)\#([A-Za-z0-9\-_]+)', r'https://mega.nz/#!\1!!!!\2'),
-                    (r'mega\.nz/embed/\#(\![A-z0-9-]+\![A-z0-9-]+)', r'https://mega.nz/\1'),
-                    (r'mega\.nz/embed/([A-Za-z0-9-_!]+)', r'https://mega.nz/#\1'),
-                    (r'mega\.nz/file/\#([A-Za-z0-9-_!]+)', r'https://mega.nz/#\1'),
-                    (r'mega\.co\.nz/\#\!([A-Za-z0-9\-_]+)\!([A-Za-z0-9\-_]+)', r'https://mega.nz/#!\1!!!!\2'),
-                    (r'mega\.co\.nz/\#F\!([A-Za-z0-9\-_]+)\!([A-Za-z0-9\-_]+)', r'https://mega.nz/#F!\1!!!!\2'),
-                ]
-                
-                for pattern, replacement in url_patterns:
-                    url = re.sub(pattern, replacement, url)
-                
-                # Asegurar que tenga el formato correcto
-                if '/embed#' in url:
-                    url = url.replace('/embed#', '/#')
-                
-                # MEGA funciona mejor con yt-dlp o megaserver
-                # Intentar con yt-dlp primero
-                print("   ⚠️ MEGA: usando yt-dlp...")
-                return url, None
-                
-            except Exception as e:
-                print("   ⚠️ MEGA error")
-        
-        # === Maru (similar estructura a Mail.ru) ===
-        elif "maru" in s_url.lower():
-            try:
-                headers = {
-                    'User-Agent': USER_AGENT,
-                    'Referer': 'https://www3.animeflv.net/'
-                }
-                
-                res = SESSION.get(s_url, timeout=10, headers=headers)
-                
-                # Verificar si video no existe
-                if res.status_code == 404 or '"error"' in res.text:
-                    print("   ⚠️ Maru: Video no encontrado")
-                    return None, None
-                
-                # Buscar múltiples patrones de video (similar a Mail.ru)
-                patterns = [
-                    r'"metadataUrl"\s*:\s*"([^"]+)"',  # Igual que Mail.ru
-                    r'"file"\s*:\s*"([^"]+\.m3u8[^"]*)"',  # m3u8
-                    r'"file"\s*:\s*"([^"]+\.mp4[^"]*)"',  # mp4 directo
-                    r'file:\s*"([^"]+\.mp4[^"]*)"',
-                    r'source:\s*"([^"]+\.mp4[^"]*)"',
-                    r'src:\s*"([^"]+\.mp4[^"]*)"',
-                    r'video\[0\]\.file\s*=\s*"([^"]+)"',
-                ]
-                
-                for pattern in patterns:
-                    m = re.search(pattern, res.text)
-                    if m:
-                        video_url = m.group(1)
-                        
-                        # Si es metadataUrl, hacer request adicional
-                        if 'metadataUrl' in pattern:
-                            meta_url = video_url
-                            if meta_url.startswith('//'):
-                                meta_url = "https:" + meta_url
-                            
-                            meta_res = SESSION.get(meta_url, timeout=10, headers=headers).json()
-                            if meta_res.get('videos') and len(meta_res['videos']) > 0:
-                                video_url = meta_res['videos'][0]['url']
-                                if not video_url.startswith('http'):
-                                    video_url = "http:" + video_url
-                                return video_url, None
-                        else:
-                            return video_url, None
-                            
-            except Exception as e:
-                print("   ⚠️ Maru error")
-                
-    except Exception as e:
-        print("   ⚠️ Error general")
-    
-    # Fallback: devolver URL original para que yt-dlp la procese
-    return s_url, None
-
-
-def play_with_options(final_url, server_url, cookie=None, extra_opts=None):
-    # ANDROID: solo mpv-android
-    if is_termux():
-        if play_android_mpv(final_url, server_url):
-            return 0
-        return -1
-    
-    # Desktop: usar mpv normal
-    net_config = get_network_speed()
-    cache_secs = net_config["cache_secs"]
-    
-    opts = [
-        "mpv", final_url,
-        f"--referrer={server_url}",
-        "--cache=yes",
-        f"--cache-secs={cache_secs}",
-        f"--stream-buffer-size={net_config['stream_buffer']}",
-        f"--demuxer-max-bytes={net_config['demuxer_bytes']}",
-        "--force-window=yes",
-    ]
-    
-    # Agregar opciones de reconnect si la conexión no es excelente
-    if net_config.get("reconnect"):
-        opts.extend([
-            "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_at_eof=1,reconnect_delay_max=10",
-            "--http-reconnect=yes",
-            "--http-reconnect-stream=yes",
-            "--http-reconnect-delay-max=15",
-        ])
-    
-    if cookie:
-        opts.append(f"--http-header-fields=Cookie: {cookie}")
-    if extra_opts:
-        opts.extend(extra_opts)
-    
-    print(f"   📶 Buffer: {net_config['priority']} ({net_config['cache_secs']}s cache)")
-    
-    try:
-        subprocess.run(opts, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if ask_playback_success():
-            return 1
-    except Exception as e:
-        print(f"   ❌ Error al lanzar MPV: {e}")
-    
-    return 0
-
-
-def try_ytdlp_play(final_url, server_url):
-    import time
-    try:
-        cmd = ["yt-dlp", "-q", "--no-warnings", "-f", "best", "--no-playlist", "--referer", server_url, "-o", "-", final_url]
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        mpv_cmd = ["mpv", "-", f"--referrer={server_url}", "--cache=yes", "--force-window=yes", "--msg-level=all=no"]
-        mpv = subprocess.Popen(mpv_cmd, stdin=proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if proc.stdout:
-            proc.stdout.close()
-        
-        start_time = time.time()
-        result = mpv.wait()
-        
-        if (time.time() - start_time) < 5:
-            return 0
-        
-        if ask_playback_success():
-            return 1
-        return 0
-    except:
-        return 0
-
-
-def download_and_play(final_url, server_url):
-    print("   📥 Descargando (buffer alto)...")
-    
-    if is_termux():
-        temp_file = '/sdcard/Download/cli_ani_video.mp4'
-        
-        cmd = [
-            'yt-dlp', '-q', '--no-warnings', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            '-o', temp_file, '--referer', server_url, '--no-playlist', '--buffer-size', '16M', final_url
+    if termux:
+        methods = [
+            ("MPV App", ["am", "start", "--user", "0", "-a", "android.intent.action.VIEW", "-d", url, "-n", "io.mpv/.MPVActivity", "-f", "0x10000000", "--es", "http-header-referer", ref]),
+            ("Universal", ["termux-open", url])
         ]
-        
-        result = subprocess.run(cmd, capture_output=True, timeout=600,
-                                stderr=subprocess.DEVNULL)
-        
-        if result.returncode != 0:
-            cmd_alt = ['yt-dlp', '-q', '--no-warnings', '-f', 'best', '-o', temp_file, '--referer', server_url, '--no-playlist', final_url]
-            result = subprocess.run(cmd_alt, capture_output=True, timeout=600,
-                                    stderr=subprocess.DEVNULL)
-            if result.returncode != 0:
-                return 0
-        
-        if os.path.exists(temp_file):
-            android_players = check_android_players()
-            
-            if android_players.get('com.mpv.android', False):
-                try:
-                    print("   📱 Abriendo con MPV Android...")
-                    mpv_url = f"com.mpv.android://{temp_file}"
-                    subprocess.run(['termux-open', mpv_url], 
-                                 capture_output=True, timeout=10)
-                    return 1 if ask_playback_success() else 0
-                except:
-                    pass
-            
+        for _, c in methods:
             try:
-                print("   📱 Abriendo con reproductor externo...")
-                subprocess.run(['termux-open', temp_file], capture_output=True, timeout=10)
-                return 1 if ask_playback_success() else 0
-            except:
-                pass
-        return 0
+                subprocess.run(c, capture_output=True, timeout=5)
+                if ask_success(): return True
+            except: continue
     else:
-        import tempfile
-        temp_file = os.path.join(tempfile.gettempdir(), 'cli_ani_temp.mp4')
-        
-        cmd = [
-            'yt-dlp', '-q', '--no-warnings', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            '-o', temp_file, '--referer', server_url, '--no-playlist', '--buffer-size', '16M', final_url
-        ]
-        
-        result = subprocess.run(cmd, capture_output=True, timeout=600,
-                                stderr=subprocess.DEVNULL)
-        
-        if result.returncode != 0:
-            cmd_alt = ['yt-dlp', '-q', '--no-warnings', '-f', 'best', '-o', temp_file, '--referer', server_url, '--no-playlist', final_url]
-            result = subprocess.run(cmd_alt, capture_output=True, timeout=600,
-                                    stderr=subprocess.DEVNULL)
-            if result.returncode != 0:
-                return 0
-        
-        if os.path.exists(temp_file):
-            print("   ▶️  Reproduciendo archivo local...")
-            subprocess.run(["mpv", temp_file, "--force-window=yes", "--msg-level=all=no"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return 1 if ask_playback_success() else 0
-        return 0
+        cmd = ["mpv", url, f"--referrer={ref}", "--cache=yes", "--force-window=yes"]
+        try:
+            subprocess.run(cmd)
+            return ask_success()
+        except: pass
+    return False
 
+# --- DATOS ---
 
-def try_all_methods(final_url, server_url, cookie=None, server_name=None):
-    """Intenta reproducir con múltiples métodos. Retorna 1 solo si el usuario confirma éxito."""
-    if is_termux():
-        print("▶️  Reproduciendo en Android...")
-        success = play_android_mpv(final_url, server_url)
-        return 1 if success else 0
-    
-    # Desktop - intentar múltiples métodos
-    print("▶️  Método 1: mpv directo...")
-    res = play_with_options(final_url, server_url, cookie)
-    if res == 1:
-        return 1
-    
-    print("▶️  Método 2: yt-dlp bridge...")
-    res = try_ytdlp_play(final_url, server_url)
-    if res == 1:
-        return 1
-    
-    print("▶️  Método 3: descargar y reproducir...")
-    res = download_and_play(final_url, server_url)
-    if res == 1:
-        return 1
-    
-    return 0
+DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cli_ani_data.json')
+DB = {"history": [], "vistos": {}, "ranks": {}}
 
-
-def select_from_history():
-    if not HISTORY["animes"]:
-        return None
-    
-    print_history()
-    print(f"\n0. Nueva búsqueda")
-    
+def load_db():
+    global DB
     try:
-        choice = int(input("\nSelecciona (0-10): "))
-    except:
-        return None
-    
-    if choice == 0:
-        return None
-    
-    if 0 < choice <= len(HISTORY["animes"]):
-        return HISTORY["animes"][choice - 1]
-    
-    return None
+        if os.path.exists(DB_FILE):
+            with open(DB_FILE, 'r') as f:
+                loaded = json.load(f)
+                DB.update(loaded)
+    except: pass
 
+def save_db():
+    try:
+        with open(DB_FILE, 'w') as f: json.dump(DB, f, indent=2)
+    except: pass
+
+def get_rate(n):
+    r = DB["ranks"].get(n, {"s": 0, "t": 0})
+    return (r["s"] / r["t"] * 100) if r.get("t", 0) > 0 else 50.0
+
+# --- MAIN ---
 
 def main():
-    load_history()
-    load_ranking()
+    load_db()
+    print("\n" + "═"*MW)
+    print(" ✨ CLI-ANI v0.715 ✨ ".center(MW))
+    print("═"*MW)
     
-    print("\n" + "="*49)
-    print("🚀  CLI-ANI v0.667  🚀")
-    print("="*49 + "\n")
+    print("\n 1. 🔍 ¿Qué anime buscamos?\n 2. 📚 Ver tu historial")
+    op = input("\n ⏩ Elige: ").strip() or "1"
     
-    # Menú principal
-    print("1. Buscar anime")
-    print("2. Ver historial")
-    
-    try:
-        menu_choice = input("\nOpción: ").strip()
-    except:
-        menu_choice = "1"
-    
-    selected = None
-    
-    if menu_choice == "2":
-        selected = select_from_history()
-        if selected is None:
-            query = input("\n🔍 Anime a buscar: ").strip()
-        else:
-            query = None
-    else:
-        query = input("🔍 Anime a buscar: ").strip()
-    
-    if not query and not selected:
-        print("❌ Sin texto de búsqueda")
-        return
-    
-    # Obtener anime
-    if selected:
-        anime_title = selected['title']
-        anime_url = selected['url']
-        active_base = BASE_URL
-    else:
-        # Intentar con sitio principal, si falla usar móvil
-        base_urls = [BASE_URL, "https://m.animeflv.net"]
-        results = []
-        active_base = None
-        
-        for base in base_urls:
-            try:
-                res = SESSION.get(f"{base}/browse", params={'q': query}, timeout=10)
-                if res.status_code == 200:
-                    soup = BeautifulSoup(res.text, 'html.parser')
-                    items = soup.select('ul.ListAnimes li')
-                    for i in items:
-                        h3 = i.find('h3')
-                        a = i.find('a')
-                        if h3 and a:
-                            results.append({'t': h3.get_text(strip=True), 'u': a.get('href', '')})
-                    if results:
-                        active_base = base
-                        break
-            except Exception as e:
-                continue
-        
-        if not results:
-            print("❌ No se encontraron resultados.")
-            return
-            
-        for i, r in enumerate(results[:10]):
-            print(f"{i+1}. {r['t']}")
-
-        idx = int(input("\n🔢 Selecciona: ")) - 1
-        anime_title = results[idx]['t']
-        anime_url = results[idx]['u']
-    
-    # Obtener episodios
-    try:
-        res_anime = SESSION.get(f"{active_base}{anime_url}", timeout=10)
-    except Exception as e:
-        print("❌ Error al obtener episodios")
-        return
-
-    slug_match = re.search(r"var anime_info = \[(.*?)\];", res_anime.text)
-    eps_match = re.search(r"var episodes = (\[\[.*\]\]);", res_anime.text)
-    
-    if not slug_match or not eps_match:
-        print("❌ No se pudieron parsear los episodios")
-        return
-    
-    slug = slug_match.group(1).split(',')[-1].strip('" ')
-    eps_list = sorted([e[0] for e in json.loads(eps_match.group(1))])
-    
-    # Guardar en historial
-    add_to_history(anime_title, anime_url, slug)
-    
-    print(f"\n📺 {anime_title}")
-    print(f"📑 Episodios: {eps_list[0]} - {eps_list[-1]}")
-    
-    # Mostrar episodios con verde para vistos
-    print("\n📋 Lista de episodios:")
-    print("-" * 40)
-    for ep in eps_list:
-        if is_episode_viewed(slug, ep):
-            print(f"  \033[92m● {ep}\033[0m")  # Verde
-        else:
-            print(f"  ○ {ep}")
-    print("-" * 40)
-    print("Leyenda: \033[92m●\033[0m = visto, ○ = no visto")
-    
-    target = input("\n💬 Episodio: ").strip() or eps_list[-1]
-    
-    # Obtener servidores
-    try:
-        res_ep = SESSION.get(f"{active_base}/ver/{slug}-{target}", timeout=10)
-        videos_match = re.search(r"var videos = ({.*?});", res_ep.text)
-        if not videos_match:
-            print("❌ No se encontraron servidores en la página")
-            return
-        servers_raw = json.loads(videos_match.group(1))
-    except Exception as e:
-        print("❌ Error obteniendo servidores")
-        return
-
-    raw_list = []
-    for lang in servers_raw:
-        for s in servers_raw[lang]:
-            raw_list.append({'n': s['title'], 'u': s['code'].replace('\\', '')})
-
-    def get_server_sort_key(server):
-        name = server['n']
-        rate = get_server_success_rate(name)
-        return -rate
-
-    sorted_servers = sorted(raw_list, key=get_server_sort_key)
-
-    print(f"\n🎬 Servidores ordenados por tasa de acierto:")
-    print(f"{'#':<4} {'Servidor':<15} {'Tasa':<10} {'Exitos/Total':<15}")
-    print("-" * 46)
-    for i, s in enumerate(sorted_servers):
-        rate = get_server_success_rate(s['n'])
-        stats = SERVER_RANKING.get(s['n'], {"success": 0, "total": 0})
-        print(f"{i+1:<4} {s['n']:<15} {rate:>6.1f}%    {stats['success']}/{stats['total']:<13}")
-    print("-" * 46)
-
-    # Intentar cada servidor automáticamente
-    for idx, server in enumerate(sorted_servers):
-        print(f"\n📡 [{server['n']}] (Intento {idx+1}/{len(sorted_servers)})")
-        
+    sel = None
+    if op == "2" and DB["history"]:
+        print("\n 📂 Recientes:")
+        for i, a in enumerate(DB["history"]): print(f"  {i+1}. {a['t'][:30]}")
         try:
-            final_url, cookie = get_best_link(server)
-            
-            if not final_url:
-                record_server_result(server['n'], False)
-                continue
-            
-            if not is_termux():
-                print(f"   📡 {final_url[:40]}...")
-            
-            result = try_all_methods(final_url, server['u'], cookie, server['n'])
-            
-            if result == 1:
-                record_server_result(server['n'], True)
-                mark_episode_viewed(slug, target)
-                print(f"✅ Disfruta el episodio en {server['n']}")
-                break
-            else:
-                record_server_result(server['n'], False)
-                continue
-                
-        except Exception:
-            continue
+            h_idx = int(input("\n ⏩ Elige (0=buscar): ") or "0")
+            if h_idx > 0: sel = DB["history"][h_idx-1]
+        except: pass
 
+    query = input("\n 🔍 Escribe el nombre: ").strip() if not sel else None
+    if not query and not sel: return
+
+    if not sel:
+        try:
+            res = SESSION.get(f"{BASE_URL}/browse", params={'q': query}, timeout=10)
+            soup = BeautifulSoup(res.text, 'html.parser')
+            items = soup.select('ul.ListAnimes li')
+            if not items: print(" ⚠️ Sin resultados."); return
+            results = [{'t': i.find('h3').get_text(strip=True), 'u': i.find('a').get('href', '')} for i in items if i.find('h3')]
+            print("\n 🌟 Encontrados:")
+            for i, r in enumerate(results[:10]): print(f"  {i+1}. {r['t'][:30]}")
+            sel = results[int(input("\n 🔢 Número: ")) - 1]
+        except: return
+
+    res_a = SESSION.get(f"{BASE_URL}{sel['u']}", timeout=10)
+    sm = re.search(r"var anime_info = \[(.*?)\];", res_a.text)
+    slug = [p.strip('" ') for p in sm.group(1).split(',')][2] if sm else sel['u'].split('/')[-1]
+    
+    eps_raw = json.loads(re.search(r"var episodes = (\[\[.*\]\]);", res_a.text).group(1))
+    try: eps = sorted([e[0] for e in eps_raw], key=lambda x: float(x))
+    except: eps = sorted([e[0] for e in eps_raw])
+    
+    DB["history"] = [a for a in DB["history"] if a['u'] != sel['u']]
+    DB["history"].insert(0, sel); DB["history"] = DB["history"][:10]; save_db()
+
+    print(f"\n 📺 Serie: \033[92m{sel['t'][:30]}\033[0m")
+    vistos = DB["vistos"].get(slug, [])
+    for i, e in enumerate(eps):
+        m = "\033[92m●\033[0m" if str(e) in vistos else "○"
+        print(f"{m}{str(e).ljust(3)}", end=" " if (i+1)%4 != 0 else "\n")
+    print("\n")
+    
+    target = input(" 💬 ¿Qué episodio pongo?: ").strip() or str(eps[-1])
+    try:
+        res_e = SESSION.get(f"{BASE_URL}/ver/{slug}-{target}", timeout=10)
+        v_raw = json.loads(re.search(r"var videos = ({.*?});", res_e.text).group(1))
+        srvs = []
+        for l in v_raw:
+            for s in v_raw[l]: srvs.append({'n': s['title'], 'u': s['code'].replace('\\', '')})
+    except: print(" ⚠️ Error de conexión."); return
+
+    # ORDENAR POR ÉXITO
+    srvs = sorted(srvs, key=lambda x: get_rate(x['n']), reverse=True)
+
+    print(f"\n 🎬 RANKING DE FUENTES:")
+    print(f" {'#':<2} {'Fuente':<10} {'Éxito':<5} {'Hist'}")
+    print("─"*MW)
+    for i, s in enumerate(srvs):
+        r = get_rate(s['n'])
+        st = DB["ranks"].get(s['n'], {"s": 0, "t": 0})
+        print(f" {i+1:<2} {s['n'][:10]:<10} {int(r):>3}%  {st['s']}/{st['t']}")
+
+    for idx, s in enumerate(srvs):
+        try:
+            print(f"\n 📡 Probando: {s['n']} ({int(get_rate(s['n']))}%)")
+            f_url, _ = get_link(s)
+            if play(f_url, s['n'], s['u']):
+                if s['n'] not in DB["ranks"]: DB["ranks"][s['n']] = {"s": 0, "t": 0}
+                DB["ranks"][s['n']]["t"] += 1; DB["ranks"][s['n']]["s"] += 1
+                if slug not in DB["vistos"]: DB["vistos"][slug] = []
+                if str(target) not in DB["vistos"][slug]: DB["vistos"][slug].append(str(target))
+                save_db(); print(f" ✅ ¡Que lo disfrutes!"); break
+            else:
+                if s['n'] not in DB["ranks"]: DB["ranks"][s['n']] = {"s": 0, "t": 0}
+                DB["ranks"][s['n']]["t"] += 1; save_db()
+        except: continue
 
 if __name__ == "__main__":
-    # Verificar dependencias primero
-    if not check_dependencies():
-        print("\n⚠️  Instala las dependencias faltantes y vuelve a ejecutar.")
-        sys.exit(1)
-    
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n👋")
-    except Exception as e:
-        print("\n❌ Error")
+    if not shutil.which("yt-dlp"): print(" ⚠️ Instala 'yt-dlp'"); sys.exit(1)
+    try: main()
+    except KeyboardInterrupt: print("\n 👋 ¡Hasta la próxima!")
+    except Exception as e: print(f"\n ⚠️ Error inesperado: {type(e).__name__}")
