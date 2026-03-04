@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # =============================================================================
-# CLI-ANI - Edición Final v0.715 GNU/GPLv3
+# CLI-ANI - Edición Termux Fix v0.716
 # =============================================================================
-# Desarrollado por Washaka (2026)
+# Desarrollado con honestidad por Washaka (2026)
 # =============================================================================
 
 import requests, re, json, subprocess, string, html, sys, os, time, select, shutil, platform
@@ -17,7 +17,12 @@ SESSION.headers.update({'User-Agent': UA, 'Referer': 'https://www3.animeflv.net/
 MW = 38 # Ancho estricto para Termux
 
 def is_termux():
-    return (os.environ.get('TERMUX_VERSION') is not None or os.path.exists('/data/data/com.termux'))
+    """Detección robusta de Termux"""
+    return (
+        os.environ.get('TERMUX_VERSION') is not None or 
+        os.path.exists('/data/data/com.termux') or
+        'com.termux' in os.environ.get('PREFIX', '')
+    )
 
 # --- INTERFAZ ---
 
@@ -28,29 +33,23 @@ def get_timer_color(rem):
 
 def timed_input(prompt, timeout=10):
     start = time.time()
-    # Limpieza simple de buffer
     try:
         while True:
-            elapsed = time.time() - start
-            rem = int(timeout - elapsed)
+            rem = int(timeout - (time.time() - start))
             if rem <= 0:
                 sys.stdout.write(f"\r{prompt} [\033[91m0s\033[0m]: ")
                 sys.stdout.flush()
                 return ""
-            
             color = get_timer_color(rem)
             sys.stdout.write(f"\r{prompt} ({color}{rem}s\033[0m): ")
             sys.stdout.flush()
-            
             r, _, _ = select.select([sys.stdin], [], [], 0.5)
-            if r:
-                line = sys.stdin.readline().strip().lower()
-                return line
+            if r: return sys.stdin.readline().strip().lower()
     except: return ""
 
 def ask_success():
     print("\n" + "─"*MW)
-    res = timed_input("❓ ¿Se abrió bien? (S/N)", timeout=10)
+    res = timed_input("❓ ¿Se abrió bien el video? (S/N)", timeout=10)
     print("\n" + "─"*MW)
     return res in ['s', 'si', 'sí', 'y', 'yes']
 
@@ -77,34 +76,33 @@ def play(url, server_name, ref=None):
     termux = is_termux()
     print(f" 🚀 Lanzando: {server_name}")
     
-    # STATUS REAL (YT-DLP)
     if not any(x in url.lower() for x in ['.m3u8', '.mp4']):
-        print(" 📊 INFO TRANSMISIÓN (yt-dlp):")
+        print(" 📊 STATUS REAL (yt-dlp):")
         try:
-            # Ejecución directa para ver el progreso real en pantalla
             cmd = ['yt-dlp', '--no-check-certificate', '--progress', '-g', url]
             p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             final_url = ""
             for line in p.stdout:
                 if line.strip().startswith('http'): final_url = line.strip()
-                else: 
-                    # Mostrar progreso en una sola línea
-                    sys.stdout.write(f"\r   ▷ {line.strip()[:MW-6]}")
-                    sys.stdout.flush()
+                else: sys.stdout.write(f"\r   ▷ {line.strip()[:MW-6]} ")
             p.wait()
             if final_url: url = final_url
             print("")
         except: pass
 
     if termux:
+        # Prioridad a las apps de MPV antes que termux-open
         methods = [
-            ("MPV App", ["am", "start", "--user", "0", "-a", "android.intent.action.VIEW", "-d", url, "-n", "io.mpv/.MPVActivity", "-f", "0x10000000", "--es", "http-header-referer", ref]),
-            ("Universal", ["termux-open", url])
+            ("MPV Oficial", ["am", "start", "--user", "0", "-a", "android.intent.action.VIEW", "-d", url, "-n", "io.mpv/.MPVActivity", "-f", "0x10000000", "--es", "http-header-referer", ref]),
+            ("MPV Fork", ["am", "start", "--user", "0", "-a", "android.intent.action.VIEW", "-d", url, "-n", "is.xyz.mpv/.MPVActivity", "-f", "0x10000000"]),
+            ("Navegador/Otros", ["termux-open", url])
         ]
-        for _, c in methods:
+        for name, c in methods:
             try:
-                subprocess.run(c, capture_output=True, timeout=5)
-                if ask_success(): return True
+                res = subprocess.run(c, capture_output=True, timeout=5)
+                if res.returncode == 0:
+                    print(f"   🎬 Abriendo con {name}...")
+                    if ask_success(): return True
             except: continue
     else:
         cmd = ["mpv", url, f"--referrer={ref}", "--cache=yes", "--force-window=yes"]
@@ -123,14 +121,11 @@ def load_db():
     global DB
     try:
         if os.path.exists(DB_FILE):
-            with open(DB_FILE, 'r') as f:
-                loaded = json.load(f)
-                DB.update(loaded)
+            DB.update(json.load(open(DB_FILE)))
     except: pass
 
 def save_db():
-    try:
-        with open(DB_FILE, 'w') as f: json.dump(DB, f, indent=2)
+    try: json.dump(DB, open(DB_FILE, 'w'), indent=2)
     except: pass
 
 def get_rate(n):
@@ -142,10 +137,12 @@ def get_rate(n):
 def main():
     load_db()
     print("\n" + "═"*MW)
-    print(" ✨ CLI-ANI v0.715 ✨ ".center(MW))
+    print(" ✨ CLI-ANI v0.716 ✨ ".center(MW))
     print("═"*MW)
     
-    print("\n 1. 🔍 ¿Qué anime buscamos?\n 2. 📚 Ver tu historial")
+    if is_termux(): print("📱 Android detectado".center(MW))
+    
+    print("\n 1. 🔍 ¡Buscar Anime!\n 2. 📚 Ver historial")
     op = input("\n ⏩ Elige: ").strip() or "1"
     
     sel = None
@@ -153,7 +150,7 @@ def main():
         print("\n 📂 Recientes:")
         for i, a in enumerate(DB["history"]): print(f"  {i+1}. {a['t'][:30]}")
         try:
-            h_idx = int(input("\n ⏩ Elige (0=buscar): ") or "0")
+            h_idx = int(input("\n ⏩ Selecciona (0=buscar): ") or "0")
             if h_idx > 0: sel = DB["history"][h_idx-1]
         except: pass
 
@@ -190,7 +187,7 @@ def main():
         print(f"{m}{str(e).ljust(3)}", end=" " if (i+1)%4 != 0 else "\n")
     print("\n")
     
-    target = input(" 💬 ¿Qué episodio pongo?: ").strip() or str(eps[-1])
+    target = input(" 💬 Episodio: ").strip() or str(eps[-1])
     try:
         res_e = SESSION.get(f"{BASE_URL}/ver/{slug}-{target}", timeout=10)
         v_raw = json.loads(re.search(r"var videos = ({.*?});", res_e.text).group(1))
@@ -199,11 +196,10 @@ def main():
             for s in v_raw[l]: srvs.append({'n': s['title'], 'u': s['code'].replace('\\', '')})
     except: print(" ⚠️ Error de conexión."); return
 
-    # ORDENAR POR ÉXITO
     srvs = sorted(srvs, key=lambda x: get_rate(x['n']), reverse=True)
 
-    print(f"\n 🎬 RANKING DE FUENTES:")
-    print(f" {'#':<2} {'Fuente':<10} {'Éxito':<5} {'Hist'}")
+    print(f"\n 🎬 RANKING ÉXITO:")
+    print(f" {'#':<2} {'Fuente':<10} {'%':<5} {'Hist'}")
     print("─"*MW)
     for i, s in enumerate(srvs):
         r = get_rate(s['n'])
@@ -219,7 +215,7 @@ def main():
                 DB["ranks"][s['n']]["t"] += 1; DB["ranks"][s['n']]["s"] += 1
                 if slug not in DB["vistos"]: DB["vistos"][slug] = []
                 if str(target) not in DB["vistos"][slug]: DB["vistos"][slug].append(str(target))
-                save_db(); print(f" ✅ ¡Que lo disfrutes!"); break
+                save_db(); print(f" ✅ ¡Listo! Que lo disfrutes."); break
             else:
                 if s['n'] not in DB["ranks"]: DB["ranks"][s['n']] = {"s": 0, "t": 0}
                 DB["ranks"][s['n']]["t"] += 1; save_db()
@@ -228,5 +224,5 @@ def main():
 if __name__ == "__main__":
     if not shutil.which("yt-dlp"): print(" ⚠️ Instala 'yt-dlp'"); sys.exit(1)
     try: main()
-    except KeyboardInterrupt: print("\n 👋 ¡Hasta la próxima!")
-    except Exception as e: print(f"\n ⚠️ Error inesperado: {type(e).__name__}")
+    except KeyboardInterrupt: print("\n 👋 ¡Chao!")
+    except Exception as e: print(f"\n ⚠️ Error: {type(e).__name__}")
