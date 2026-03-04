@@ -1279,7 +1279,7 @@ def try_all_methods(final_url, server_url, cookie=None):
     if download_and_play(final_url, server_url):
         return True
     
-    print("❌ Sin método disponible")
+    print("❌ Sin servidores")
     return False
 
 
@@ -1447,13 +1447,10 @@ def main():
             print(f"   📡 {final_url[:40]}...")
         
         if try_all_methods(final_url, server['u'], cookie):
-            ok = input("Funciono? [s/n]: ").strip().lower()
-            if ok == 's':
-                mark_episode_viewed(slug, target)
-                print(f"   ✅ Episodio {target} marcado")
-                break
+            mark_episode_viewed(slug, target)
+            break
         else:
-            print("❌ Fallo, siguiente...")
+            print("❌ Error")
 
 
 if __name__ == "__main__":
