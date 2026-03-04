@@ -89,26 +89,37 @@ def get_platform():
 
 
 def play_android_mpv(url, referer=None):
-    """Reproduce usando la app MPV Android (is.xyz.mpv) con am start"""
+    """Reproduce usando la app MPV Android optimizado"""
     try:
-        video_url = url
+        # Limpieza de URL - evitar duplicados https://
+        video_url = url.strip()
+        video_url = re.sub(r'^(https?://)+', r'https://', video_url)
+        
+        if len(video_url) < 10 or not video_url.startswith('http'):
+            print("   ❌ URL inválida o vacía")
+            return False
+        
+        user_agent = None
         
         # Desofuscar URL si es necesario
-        if url.endswith('.m3u8') or 'm3u8' in url or 'streamwish' in url.lower() or 'streamtape' in url.lower():
+        if video_url.endswith('.m3u8') or 'm3u8' in video_url or 'streamwish' in video_url.lower() or 'streamtape' in video_url.lower():
             try:
                 result = subprocess.run(
-                    ['yt-dlp', '-j', '--no-playlist', url],
+                    ['yt-dlp', '-j', '--no-playlist', video_url],
                     capture_output=True, text=True, timeout=30
                 )
                 if result.returncode == 0 and result.stdout.strip():
                     video_data = json.loads(result.stdout.strip())
-                    video_url = video_data.get('url', url)
+                    video_url = video_data.get('url', video_url)
+                    user_agent = video_data.get('http_headers', {}).get('User-Agent')
+                    # Limpiar URL полученная
+                    video_url = re.sub(r'^(https?://)+', r'https://', video_url)
                     print(f"   📡 URL desofuscada: {video_url[:60]}...")
             except Exception as e:
                 print(f"   ⚠️ yt-dlp -j falló: {e}")
                 try:
                     result = subprocess.run(
-                        ['yt-dlp', '-g', url],
+                        ['yt-dlp', '-g', video_url],
                         capture_output=True, text=True, timeout=30
                     )
                     if result.returncode == 0 and result.stdout.strip():
@@ -116,43 +127,60 @@ def play_android_mpv(url, referer=None):
                 except:
                     pass
         
+        # Verificar URL final
         if not video_url or not video_url.startswith('http'):
-            print("   ❌ URL inválida o vacía")
+            print("   ❌ URL sigue inválida después de desofuscar")
             return False
         
-        # Comando exacto como ani-cli: is.xyz.mpv
+        # Paquete principal: io.mpv
+        package = "io.mpv"
+        
         cmd = [
             'am', 'start', '--user', '0',
             '-a', 'android.intent.action.VIEW',
-            '-d', f'"{video_url}"',
-            '-n', 'is.xyz.mpv/.MPVActivity'
+            '-d', video_url,
+            '-n', f'{package}/.MPVActivity'
         ]
         
-        print(f"   🚀 Lanzando: {' '.join(cmd)}")
+        # Añadir User-Agent si está disponible
+        if user_agent:
+            cmd.extend(['--es', 'http-header-user-agent', user_agent])
+        
+        # Referer es CRUCIAL para evitar 403
+        actual_referer = referer or 'https://www3.animeflv.net/'
+        cmd.extend(['--es', 'http-header-referer', actual_referer])
+
+        print(f"   🚀 Lanzando MPV Android...")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         
         if result.returncode == 0:
             print("   ✅ Video enviado a mpv-android")
             return True
         else:
-            print(f"   ❌ Error: {result.stderr}")
+            print(f"   ⚠️ io.mpv no funcionó, intentando is.xyz.mpv...")
         
-        # Fallback: io.mpv
+        # Fallback: is.xyz.mpv
         try:
-            cmd_io = [
+            cmd_is = [
                 'am', 'start', '--user', '0',
                 '-a', 'android.intent.action.VIEW',
-                '-d', f'"{video_url}"',
-                '-n', 'io.mpv/.MPVActivity'
+                '-d', video_url,
+                '-n', 'is.xyz.mpv/.MPVActivity'
             ]
-            result = subprocess.run(cmd_io, capture_output=True, timeout=15)
+            if user_agent:
+                cmd_is.extend(['--es', 'http-header-user-agent', user_agent])
+            cmd_is.extend(['--es', 'http-header-referer', actual_referer])
+            
+            result = subprocess.run(cmd_is, capture_output=True, timeout=15)
             if result.returncode == 0:
+                print("   ✅ Video enviado a is.xyz.mpv")
                 return True
         except:
             pass
         
         # Fallback: termux-open
         try:
+            print("   🔄 Intentando con termux-open...")
             subprocess.run(['termux-open', video_url], capture_output=True, timeout=15)
             return True
         except:
@@ -161,10 +189,6 @@ def play_android_mpv(url, referer=None):
         return False
     except Exception as e:
         print(f"   ❌ Error general: {e}")
-        return False
-            
-        return False
-    except:
         return False
 
 
