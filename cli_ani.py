@@ -100,7 +100,6 @@ def play_android_mpv(url, referer=None):
         
         user_agent = None
         
-        # Desofuscar URL si es necesario
         needs_desofuscate = (
             video_url.endswith('.m3u8') or 'm3u8' in video_url or 
             'streamwish' in video_url.lower() or 'streamtape' in video_url.lower() or
@@ -118,31 +117,34 @@ def play_android_mpv(url, referer=None):
                 if result.returncode == 0 and result.stdout.strip():
                     lines = result.stdout.strip().split('\n')
                     video_url = lines[0]
-                    if len(lines) > 1:
-                        user_agent = lines[1].split(': ', 1)[-1] if ': ' in lines[1] else None
+                    if len(lines) > 1 and ': ' in lines[1]:
+                        user_agent = lines[1].split(': ', 1)[-1]
                     video_url = re.sub(r'^(https?://)+', r'https://', video_url)
                     print(f"   📡 Listo: {video_url[:50]}...")
             except:
                 pass
         
-        # Verificar URL final
         if not video_url or not video_url.startswith('http'):
             print("   ❌ URL inválida al final")
             return False
         
         actual_referer = referer or 'https://www3.animeflv.net/'
         
-        # Intento 1: io.mpv con comando exacto
+        # USER_AGENT global si no hay uno
+        if not user_agent:
+            user_agent = 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36'
+        
+        # Intento 1: io.mpv con FLAG_ACTIVITY_NEW_TASK
         print("   🎬 Abriendo io.mpv...")
         cmd1 = [
             'am', 'start', '--user', '0',
             '-a', 'android.intent.action.VIEW',
             '-d', video_url,
             '-n', 'io.mpv/mpv.android.MPVActivity',
-            '--es', 'http-header-referer', actual_referer
+            '-f', '0x10000000',
+            '--es', 'http-header-referer', actual_referer,
+            '--es', 'http-header-user-agent', user_agent
         ]
-        if user_agent:
-            cmd1.extend(['--es', 'http-header-user-agent', user_agent])
         
         result = subprocess.run(cmd1, capture_output=True, timeout=15)
         if result.returncode == 0:
@@ -156,22 +158,23 @@ def play_android_mpv(url, referer=None):
             '-a', 'android.intent.action.VIEW',
             '-d', video_url,
             '-n', 'is.xyz.mpv/mpv.android.MPVActivity',
-            '--es', 'http-header-referer', actual_referer
+            '-f', '0x10000000',
+            '--es', 'http-header-referer', actual_referer,
+            '--es', 'http-header-user-agent', user_agent
         ]
-        if user_agent:
-            cmd2.extend(['--es', 'http-header-user-agent', user_agent])
         
         result = subprocess.run(cmd2, capture_output=True, timeout=15)
         if result.returncode == 0:
             print("   ✅ Reproduciendo")
             return True
         
-        # Intento 3: comando sin package específico
+        # Intento 3: genérico
         print("   🎬 Abriendo con VIEW...")
         cmd3 = [
             'am', 'start', '--user', '0',
             '-a', 'android.intent.action.VIEW',
-            '-d', video_url
+            '-d', video_url,
+            '-f', '0x10000000'
         ]
         result = subprocess.run(cmd3, capture_output=True, timeout=15)
         if result.returncode == 0:
