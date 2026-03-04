@@ -178,24 +178,13 @@ def play_with_mpv(url, referer, cookie=None):
     """Reproduce video con mpv según la plataforma"""
     platform = get_platform()
     
-    # ANDROID: usar app MPV Android
+    # ANDROID: usar app MPV Android EXCLUSIVAMENTE
     if platform == 'android':
-        # Intentar con app MPV Android
         if play_android_mpv(url, referer):
             return True
-        # Fallback: mpv de Termux
-        if shutil.which('mpv'):
-            try:
-                opts = [
-                    'mpv', url,
-                    '--referrer', referer or 'https://www3.animeflv.net/',
-                    '--vo', 'tct',
-                    '--hwdec', 'mediacodec',
-                    '--cache', 'yes',
-                ]
-                return subprocess.run(opts).returncode == 0
-            except:
-                pass
+        # Fallback: descargar y abrir con reproductor externo
+        if download_and_play(url, referer):
+            return True
         return False
     
     # WINDOWS: usar mpv de Windows
@@ -1125,58 +1114,45 @@ def get_best_link(server):
 
 
 def play_with_options(final_url, server_url, cookie=None, extra_opts=None):
-    # Obtener configuración de red
-    net_config = get_network_speed()
-    
+    # ANDROID: usar exclusivamente mpv-android
     if is_termux():
-        # Opciones para Termux/Android - optimizadas según velocidad
-        cache_secs = net_config["cache_secs"]
-        
-        opts = [
-            "mpv", final_url,
-            f"--referrer={server_url}",
-            "--vo", "tct",
-            "--hwdec", "mediacodec",
-            "--cache=yes",
-            f"--cache-secs={cache_secs}",
-            "--player-operation-mode=cplayer",
-            # Buffer adicional para conexiones lentas
-            f"--stream-buffer-size={net_config['stream_buffer']}",
-            f"--demuxer-max-bytes={net_config['demuxer_bytes']}",
-            # Reconnect para estabilidad
+        # Intentar primero con mpv-android
+        if play_android_mpv(final_url, server_url):
+            return 0
+        # Fallback: descargar y abrir con reproductor externo
+        if download_and_play(final_url, server_url):
+            return 0
+        return -1
+    
+    # Desktop: usar mpv normal
+    net_config = get_network_speed()
+    cache_secs = net_config["cache_secs"]
+    
+    opts = [
+        "mpv", final_url,
+        f"--referrer={server_url}",
+        "--cache=yes",
+        f"--cache-secs={cache_secs}",
+        f"--stream-buffer-size={net_config['stream_buffer']}",
+        f"--demuxer-max-bytes={net_config['demuxer_bytes']}",
+        "--force-window=yes",
+    ]
+    
+    # Agregar opciones de reconnect si la conexión no es excelente
+    if net_config.get("reconnect"):
+        opts.extend([
             "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_at_eof=1,reconnect_delay_max=10",
-        ]
-    else:
-        # Opciones para desktop - optimizadas según velocidad
-        cache_secs = net_config["cache_secs"]
-        
-        opts = [
-            "mpv", final_url,
-            f"--referrer={server_url}",
-            "--cache=yes",
-            f"--cache-secs={cache_secs}",
-            f"--stream-buffer-size={net_config['stream_buffer']}",
-            f"--demuxer-max-bytes={net_config['demuxer_bytes']}",
-            "--force-window=yes",
-        ]
-        
-        # Agregar opciones de reconnect si la conexión no es excelente
-        if net_config.get("reconnect"):
-            opts.extend([
-                "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_at_eof=1,reconnect_delay_max=10",
-                "--http-reconnect=yes",
-                "--http-reconnect-stream=yes",
-                "--http-reconnect-delay-max=15",
-            ])
+            "--http-reconnect=yes",
+            "--http-reconnect-stream=yes",
+            "--http-reconnect-delay-max=15",
+        ])
     
     if cookie:
         opts.append(f"--http-header-fields=Cookie: {cookie}")
     if extra_opts:
         opts.extend(extra_opts)
     
-    # Mostrar configuración de red (solo en desktop)
-    if not is_termux():
-        print(f"   📶 Buffer: {net_config['priority']} ({net_config['cache_secs']}s cache)")
+    print(f"   📶 Buffer: {net_config['priority']} ({net_config['cache_secs']}s cache)")
     
     return subprocess.run(opts).returncode
 
@@ -1268,26 +1244,21 @@ def download_and_play(final_url, server_url):
 
 
 def try_all_methods(final_url, server_url, cookie=None):
-    # Mensaje corto para móvil
-    method_msg = "Reproduciendo..." if is_termux() else "   ▶️  Método 1: Reproducción directa..."
-    print(method_msg)
+    # ANDROID: play_with_options ya incluye el fallback a mpv-android y descarga
+    if is_termux():
+        print("Reproduciendo en Android...")
+        return play_with_options(final_url, server_url, cookie) == 0
     
+    # Desktop: intentar múltiples métodos
+    print("   ▶️  Método 1: Reproducción directa...")
     if play_with_options(final_url, server_url, cookie) == 0:
         return True
     
-    if is_termux():
-        print("Directo falló, intentando otro...")
-    else:
-        print("   ▶️  Método 2: Reproducción con cache...")
-    
+    print("   ▶️  Método 2: Reproducción con cache...")
     if play_with_options(final_url, server_url, cookie, ["--cache-secs=600"]) == 0:
         return True
     
-    if is_termux():
-        print("Cache falló, descargando...")
-    else:
-        print("   ▶️  Método 3: yt-dlp bridge...")
-    
+    print("   ▶️  Método 3: yt-dlp bridge...")
     if try_ytdlp_play(final_url, server_url) == 0:
         return True
     
