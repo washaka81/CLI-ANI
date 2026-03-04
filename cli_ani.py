@@ -72,78 +72,101 @@ def check_android_players():
     return players
 
 
+def get_platform():
+    """Detecta el sistema operativo"""
+    import platform
+    system = platform.system().lower()
+    if system == 'linux':
+        # Verificar si es Termux
+        if is_termux():
+            return 'android'
+        return 'linux'
+    elif system == 'windows':
+        return 'windows'
+    elif system == 'darwin':
+        return 'macos'
+    return 'linux'
+
+
 def play_android_mpv(url, referer=None):
-    """Reproduce usando la app MPV Android (com.mpv.android) con am start"""
+    """Reproduce usando la app MPV Android (io.mpv) con am start"""
     try:
-        # Construir URL con referer
-        if referer:
-            full_url = f"{url} --referrer={referer}"
-        else:
-            full_url = url
+        # Obtener URL directa si es stream
+        video_url = url
         
-        # Método 1: Usar am start directamente (más efectivo)
+        # Intentar extraer URL directa con yt-dlp si es un stream m3u8
+        if url.endswith('.m3u8') or 'm3u8' in url:
+            try:
+                result = subprocess.run(
+                    ['yt-dlp', '-g', url],
+                    capture_output=True, text=True, timeout=30
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    video_url = result.stdout.strip().split('\n')[0]
+            except:
+                pass
+        
+        # Método 1: io.mpv (package correcto según el bash del usuario)
         try:
             subprocess.run(
-                ['am', 'start', '-n', 'com.mpv.android/com.mpv.ui.VideoPlayerActivity',
-                 '--es', 'url', full_url],
-                capture_output=True, timeout=10
+                ['am', 'start', '-n', 'io.mpv/.MPVActivity',
+                 '-d', video_url],
+                capture_output=True, timeout=15
             )
             return True
         except:
             pass
         
-        # Método 2: Con scheme usando termux-open
+        # Método 2: com.mpv.android (alternativo)
         try:
-            mpv_url = f"com.mpv.android://{full_url}"
-            result = subprocess.run(
-                ['termux-open', mpv_url],
-                capture_output=True, text=True, timeout=15
+            subprocess.run(
+                ['am', 'start', '-n', 'com.mpv.android/com.mpv.ui.VideoPlayerActivity',
+                 '--es', 'url', video_url],
+                capture_output=True, timeout=15
             )
-            return result.returncode == 0
+            return True
         except:
-            return False
+            pass
+        
+        # Método 3: Con termux-open
+        try:
+            mpv_url = f"io.mpv://{video_url}"
+            subprocess.run(['termux-open', mpv_url], capture_output=True, timeout=15)
+            return True
+        except:
+            pass
+            
+        return False
     except:
         return False
 
 
 def play_with_mpv(url, referer, cookie=None):
-    """Reproduce video con mpv según la plataforma - Versión optimizada tipo ani-cli"""
+    """Reproduce video con mpv según la plataforma"""
+    platform = get_platform()
     
-    if is_termux():
-        # Verificar players disponibles en Android
-        android_players = check_android_players()
-        
-        # PRIORIDAD: MPV Android (com.mpv.android)
-        if android_players.get('com.mpv.android', False):
+    # ANDROID: usar app MPV Android
+    if platform == 'android':
+        # Intentar con app MPV Android
+        if play_android_mpv(url, referer):
+            return True
+        # Fallback: mpv de Termux
+        if shutil.which('mpv'):
             try:
-                print("   📱 Abriendo con MPV Android...")
-                if play_android_mpv(url, referer):
-                    return True
+                opts = [
+                    'mpv', url,
+                    '--referrer', referer or 'https://www3.animeflv.net/',
+                    '--vo', 'tct',
+                    '--hwdec', 'mediacodec',
+                    '--cache', 'yes',
+                ]
+                return subprocess.run(opts).returncode == 0
             except:
                 pass
-        
-        # Fallback: termux-open genérico
-        try:
-            print("   📱 Abriendo con reproductor disponible...")
-            subprocess.run(['termux-open', url], capture_output=True, timeout=15)
-            return True
-        except:
-            pass
-        
-        return False
-        
-        # 4. ÚLTIMO RECURSO: termux-open genérico
-        try:
-            print("   📱 Abriendo con reproductor disponible...")
-            subprocess.run(['termux-open', url], capture_output=True, timeout=15)
-            return True
-        except:
-            pass
-        
         return False
     
-    else:
-        # Desktop: reproducción normal
+    # WINDOWS: usar mpv de Windows
+    elif platform == 'windows':
         opts = [
             'mpv', url,
             '--referrer', referer,
@@ -151,10 +174,34 @@ def play_with_mpv(url, referer, cookie=None):
             '--cache-secs=300',
             '--force-window=yes',
         ]
-        
         if cookie:
             opts.append(f'--http-header-fields=Cookie: {cookie}')
-        
+        return subprocess.run(opts).returncode == 0
+    
+    # MACOS: usar mpv de macOS
+    elif platform == 'macos':
+        opts = [
+            'mpv', url,
+            '--referrer', referer,
+            '--cache=yes',
+            '--cache-secs=300',
+            '--force-window=yes',
+        ]
+        if cookie:
+            opts.append(f'--http-header-fields=Cookie: {cookie}')
+        return subprocess.run(opts).returncode == 0
+    
+    # LINUX: usar mpv de Linux
+    else:
+        opts = [
+            'mpv', url,
+            '--referrer', referer,
+            '--cache=yes',
+            '--cache-secs=300',
+            '--force-window=yes',
+        ]
+        if cookie:
+            opts.append(f'--http-header-fields=Cookie: {cookie}')
         return subprocess.run(opts).returncode == 0
 
 
