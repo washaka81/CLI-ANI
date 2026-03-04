@@ -89,11 +89,11 @@ def get_platform():
 
 
 def play_android_mpv(url, referer=None):
-    """Reproduce usando la app MPV Android (io.mpv) con am start"""
+    """Reproduce usando la app MPV Android (is.xyz.mpv) con am start"""
     try:
         video_url = url
-        user_agent = None
         
+        # Desofuscar URL si es necesario
         if url.endswith('.m3u8') or 'm3u8' in url or 'streamwish' in url.lower() or 'streamtape' in url.lower():
             try:
                 result = subprocess.run(
@@ -103,10 +103,9 @@ def play_android_mpv(url, referer=None):
                 if result.returncode == 0 and result.stdout.strip():
                     video_data = json.loads(result.stdout.strip())
                     video_url = video_data.get('url', url)
-                    user_agent = video_data.get('http_headers', {}).get('User-Agent')
-                    print(f"   📡 URL desofuscada: {video_url[:50]}...")
+                    print(f"   📡 URL desofuscada: {video_url[:60]}...")
             except Exception as e:
-                print(f"   ⚠️ yt-dlp -j falló: {e}, intentando con -g")
+                print(f"   ⚠️ yt-dlp -j falló: {e}")
                 try:
                     result = subprocess.run(
                         ['yt-dlp', '-g', url],
@@ -117,57 +116,52 @@ def play_android_mpv(url, referer=None):
                 except:
                     pass
         
-        cmd_base = ['am', 'start', '--user', '0']
-        default_referer = referer or 'https://www3.animeflv.net/'
+        if not video_url or not video_url.startswith('http'):
+            print("   ❌ URL inválida o vacía")
+            return False
         
+        # Comando exacto como ani-cli: is.xyz.mpv
+        cmd = [
+            'am', 'start', '--user', '0',
+            '-a', 'android.intent.action.VIEW',
+            '-d', f'"{video_url}"',
+            '-n', 'is.xyz.mpv/.MPVActivity'
+        ]
+        
+        print(f"   🚀 Lanzando: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        
+        if result.returncode == 0:
+            print("   ✅ Video enviado a mpv-android")
+            return True
+        else:
+            print(f"   ❌ Error: {result.stderr}")
+        
+        # Fallback: io.mpv
         try:
-            cmd = cmd_base + [
-                '-n', 'io.mpv/.MPVActivity',
-                '-d', video_url,
+            cmd_io = [
+                'am', 'start', '--user', '0',
+                '-a', 'android.intent.action.VIEW',
+                '-d', f'"{video_url}"',
+                '-n', 'io.mpv/.MPVActivity'
             ]
-            if user_agent:
-                cmd.extend(['--es', 'http-header-user-agent', user_agent])
-            if default_referer:
-                cmd.extend(['--es', 'http-header-referer', default_referer])
-            subprocess.run(cmd, capture_output=True, timeout=15)
-            return True
+            result = subprocess.run(cmd_io, capture_output=True, timeout=15)
+            if result.returncode == 0:
+                return True
         except:
             pass
         
+        # Fallback: termux-open
         try:
-            cmd = cmd_base + [
-                '-n', 'io.mpv/.MPVActivity',
-                '--es', 'url', video_url,
-            ]
-            if user_agent:
-                cmd.extend(['--es', 'http-header-user-agent', user_agent])
-            if default_referer:
-                cmd.extend(['--es', 'http-header-referer', default_referer])
-            subprocess.run(cmd, capture_output=True, timeout=15)
+            subprocess.run(['termux-open', video_url], capture_output=True, timeout=15)
             return True
         except:
             pass
-        
-        try:
-            cmd = cmd_base + [
-                '-n', 'com.mpv.android/com.mpv.ui.VideoPlayerActivity',
-                '--es', 'url', video_url,
-            ]
-            if user_agent:
-                cmd.extend(['--es', 'http-header-user-agent', user_agent])
-            if default_referer:
-                cmd.extend(['--es', 'http-header-referer', default_referer])
-            subprocess.run(cmd, capture_output=True, timeout=15)
-            return True
-        except:
-            pass
-        
-        try:
-            mpv_url = f"io.mpv://{video_url}"
-            subprocess.run(['termux-open', mpv_url], capture_output=True, timeout=15)
-            return True
-        except:
-            pass
+            
+        return False
+    except Exception as e:
+        print(f"   ❌ Error general: {e}")
+        return False
             
         return False
     except:
