@@ -55,9 +55,7 @@ def is_termux():
 def check_android_players():
     """Verifica qué reproductores están disponibles en Android"""
     players = {
-        'com.mpv.android': False,       # MPV Android oficial
-        'com.mxtech.videoplayer.ad': False,  # MX Player
-        'org.videolan.vlc': False,      # VLC
+        'com.mpv.android': False,       # MPV Android
     }
     
     try:
@@ -75,43 +73,35 @@ def check_android_players():
 
 
 def play_android_mpv(url, referer=None):
-    """Reproduce usando la app MPV Android (com.mpv.android)"""
+    """Reproduce usando la app MPV Android (com.mpv.android) con am start"""
     try:
+        # Construir URL con referer
         if referer:
             full_url = f"{url} --referrer={referer}"
         else:
             full_url = url
         
-        mpv_url = f"com.mpv.android://{full_url}"
-        result = subprocess.run(
-            ['termux-open', mpv_url],
-            capture_output=True, text=True, timeout=15
-        )
-        return result.returncode == 0
-    except:
-        return False
-
-
-def play_android_vlc(url, referer=None):
-    """Reproduce usando VLC de Android"""
-    try:
-        vlc_url = f"org.videolan.vlc://{url}"
-        subprocess.run(['termux-open', vlc_url], 
-                      capture_output=True, text=True, timeout=15)
-        return True
-    except:
-        return False
-
-
-def play_android_mxplayer(url):
-    """Reproduce usando MX Player de Android"""
-    try:
-        subprocess.run(
-            ['am', 'start', '-n', 'com.mxtech.videoplayer.ad/com.google.android.youtube.PlayerActivity',
-             '-d', url],
-            capture_output=True, text=True, timeout=15
-        )
-        return True
+        # Método 1: Usar am start directamente (más efectivo)
+        try:
+            subprocess.run(
+                ['am', 'start', '-n', 'com.mpv.android/com.mpv.ui.VideoPlayerActivity',
+                 '--es', 'url', full_url],
+                capture_output=True, timeout=10
+            )
+            return True
+        except:
+            pass
+        
+        # Método 2: Con scheme usando termux-open
+        try:
+            mpv_url = f"com.mpv.android://{full_url}"
+            result = subprocess.run(
+                ['termux-open', mpv_url],
+                capture_output=True, text=True, timeout=15
+            )
+            return result.returncode == 0
+        except:
+            return False
     except:
         return False
 
@@ -123,7 +113,7 @@ def play_with_mpv(url, referer, cookie=None):
         # Verificar players disponibles en Android
         android_players = check_android_players()
         
-        # 1. PRIORIDAD: MPV Android (com.mpv.android)
+        # PRIORIDAD: MPV Android (com.mpv.android)
         if android_players.get('com.mpv.android', False):
             try:
                 print("   📱 Abriendo con MPV Android...")
@@ -132,23 +122,15 @@ def play_with_mpv(url, referer, cookie=None):
             except:
                 pass
         
-        # 2. SEGUNDA PRIORIDAD: VLC Android
-        if android_players.get('org.videolan.vlc', False):
-            try:
-                print("   📱 Abriendo con VLC Android...")
-                if play_android_vlc(url, referer):
-                    return True
-            except:
-                pass
+        # Fallback: termux-open genérico
+        try:
+            print("   📱 Abriendo con reproductor disponible...")
+            subprocess.run(['termux-open', url], capture_output=True, timeout=15)
+            return True
+        except:
+            pass
         
-        # 3. TERCERA PRIORIDAD: MX Player
-        if android_players.get('com.mxtech.videoplayer.ad', False):
-            try:
-                print("   📱 Abriendo con MX Player...")
-                if play_android_mxplayer(url):
-                    return True
-            except:
-                pass
+        return False
         
         # 4. ÚLTIMO RECURSO: termux-open genérico
         try:
@@ -1168,27 +1150,7 @@ def download_and_play(final_url, server_url):
                 except:
                     pass
             
-            # 2. VLC
-            if android_players.get('org.videolan.vlc', False):
-                try:
-                    print("   📱 Abriendo con VLC Android...")
-                    subprocess.run(['termux-open', f"org.videolan.vlc://{temp_file}"], 
-                                 capture_output=True, timeout=10)
-                    return True
-                except:
-                    pass
-            
-            # 4. MX Player
-            if android_players.get('com.mxtech.videoplayer.ad', False):
-                try:
-                    print("   📱 Abriendo con MX Player...")
-                    subprocess.run(['termux-open', temp_file], 
-                                 capture_output=True, timeout=10)
-                    return True
-                except:
-                    pass
-            
-            # 5. Último intento: termux-open genérico
+            # Fallback: termux-open genérico
             try:
                 print("   📱 Abriendo con reproductor externo...")
                 subprocess.run(['termux-open', temp_file], capture_output=True, timeout=10)
