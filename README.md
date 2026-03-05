@@ -1,72 +1,56 @@
 
 
+  🌸 CLI-ANI: Edición De-Obfuscator v0.719
 
-  🌸 CLI-ANI: Tu Rincón de Anime en la Terminal (v0.715)
+CLI-ANI es un cliente de terminal minimalista y potente desarrollado por Washaka (2026) con fines educativos. Permite buscar y reproducir anime sin anuncios, utilizando técnicas de desofuscación dinámica para extraer enlaces directos de diversos servidores.
+🚀 Guía de Instalación
 
+Este script está optimizado para PC (Linux/Windows) y especialmente para Android (Termux).
+1. Requisitos Previos
 
-  CLI-ANI es un cliente de streaming minimalista y potente diseñado para disfrutar del anime sin distracciones.
-  Desarrollado con un enfoque "Mobile-First", está estrictamente optimizado para la pantalla vertical de Termux
-  (Android) (38 columnas), ofreciendo una experiencia fluida, honesta y elegante desde cualquier CLI.
+Necesitarás tener instalados Python y dos herramientas esenciales:
 
-  ✨ Características que lo hacen único
+    yt-dlp: Para el análisis de flujos de video.
 
+    MPV: El motor de reproducción recomendado.
 
-   * 📱 Diseño Móvil Estricto: Interfaz calculada al milímetro para terminales de smartphone. Sin textos cortados, sin
-     tablas rotas.
-   * 📊 Inteligencia de Servidores: Aprende de cada intento. El sistema registra la tasa de éxito real y ordena los
-     servidores del mejor al peor automáticamente.
-   * 📡 Transparencia Radical: Nada de barras de carga falsas. Visualiza el status honesto de yt-dlp y ffmpeg
-     (resolución, kb/s y progreso real) mientras se prepara tu video.
-   * 📚 Memoria y Seguimiento:
-       * Historial dinámico: Accede a tus series recientes en un segundo.
-       * Marcado de episodios: Control visual absoluto con puntos verdes (●) para lo visto y círculos (○) para lo
-         pendiente.
-   * 🌈 Temporizador Deluxe: Confirmación interactiva con cuenta regresiva y degradado de colores (Verde → Amarillo →
-     Rojo).
+2. Instalación en Termux (Android)
 
-  🛠️ Requisitos
+Copia y pega este comando para preparar tu entorno:
+Bash
 
+pkg update && pkg upgrade
+pkg install python mpv yt-dlp ffmpeg
+pip install requests beautifulsoup4
 
-   * Python 3.x
-   * yt-dlp (Indispensable para la extracción honesta)
-   * mpv (Reproductor recomendado)
-   * Termux (Para usuarios de Android)
+3. Instalación en PC (Linux/Windows)
 
-  🚀 Instalación y Uso
+    Asegúrate de tener mpv y yt-dlp en tu PATH.
 
+    Instala las librerías de Python:
+    Bash
 
-   1 # Clona este rincón hecho con amor
-   2 git clone https://github.com/tu-usuario/cli-ani.git
-   3 cd cli-ani
-   4
-   5 # Lanza la magia
-   6 python3 cli_ani.py
+    pip install requests beautifulsoup4
 
-  ---
+🛠️ Cómo usarlo
 
+Solo tienes que ejecutar el script y seguir las instrucciones en pantalla:
+Bash
 
-  📖 Propósitos Educativos y Aviso Legal
-  Este proyecto ha sido desarrollado exclusivamente con fines educativos y de aprendizaje sobre técnicas de web
-  scraping, automatización de procesos en entornos móviles y gestión de flujos de datos multimedia.
+python cli_ani.py
 
-  El autor no se hace responsable del uso que los usuarios finales den a esta herramienta. Por favor, apoya siempre el
-  contenido original y a las plataformas oficiales.
+💎 Características Destacadas
 
+    Desofuscador P.A.C.K.E.R. Integrado: El script incluye una función js_unpack que traduce código JavaScript "enredado" en enlaces de video reales (.m3u8 o .mp4).
 
-  ⚖️ Licencia
-  Este software está bajo la licencia GNU General Public License v3.0 (GPLv3). Eres libre de usarlo, modificarlo y
-  distribuirlo, siempre que mantengas la misma libertad para los demás.
+    Algoritmo de Tasa de Éxito: No pierdas tiempo con servidores caídos. El sistema registra cada intento exitoso o fallido y genera un ranking en tiempo real para ofrecerte siempre la mejor fuente disponible.
 
-  ---
+    Memoria Inteligente (JSON): Guarda tu historial de búsqueda y marca los episodios vistos con un sistema visual de puntos (● visto / ○ pendiente).
 
+    Fuerza Bruta en Android: Capacidad única para lanzar reproductores externos (MPV Oficial o Forks) mediante Intents de sistema, asegurando que el video se abra incluso en entornos restringidos.
 
-  ❤️ Un mensaje del autor
-  Cada línea de código en CLI-ANI fue escrita buscando la perfección en la simplicidad. Espero que este pequeño rincón
-  en tu terminal te traiga tantos momentos felices como a mí desarrollarlo.
+    Interfaz Dinámica: Incluye temporizadores de respuesta con colores y una barra de progreso honesta alimentada por los metadatos de yt-dlp.
 
-  Hecho con amor por Washaka (2026).
+📝 Nota Educativa
 
-  ---
-
-
-  ¿Te gusta el proyecto? ¡Regálale una ⭐ en GitHub!
+Este proyecto fue desarrollado por Washaka para demostrar el potencial de Python en la automatización de tareas y la interacción con la web moderna. Úsalo con respeto y curiosidad científica.
