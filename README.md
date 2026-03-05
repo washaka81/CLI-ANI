@@ -1,56 +1,86 @@
+# 🌸 CLI-ANI
 
+> Un cliente de terminal minimalista para ver anime sin anuncios, ahora en español
 
-  🌸 CLI-ANI: Edición De-Obfuscator v0.719
+[![Python](https://img.shields.io/badge/Python-3.x-blue.svg)](https://python.org)
+[![License](https://img.shields.io/badge/Licencia-GPL--3.0-green.svg)](LICENSE)
 
-CLI-ANI es un cliente de terminal minimalista y potente desarrollado por Washaka (2026) con fines educativos. Permite buscar y reproducir anime sin anuncios, utilizando técnicas de desofuscación dinámica para extraer enlaces directos de diversos servidores.
-🚀 Guía de Instalación
+## ✨ ¿Qué es CLI-ANI?
 
-Este script está optimizado para PC (Linux/Windows) y especialmente para Android (Termux).
-1. Requisitos Previos
+CLI-ANI es una herramienta de terminal poderosa y fácil de usar que te permite **buscar y reproducir anime sin anuncios**. Está desarrollada en Python y utiliza técnicas de desofuscación dinámica para extraer enlaces directos de múltiples servidores de video.
 
-Necesitarás tener instalados Python y dos herramientas esenciales:
+¿Te gusta [ani-cli](https://github.com/pystardust/ani-cli)? ¡Esto es lo mismo pero completamente en español! 🎉
 
-    yt-dlp: Para el análisis de flujos de video.
+## 🚀 Características Principales
 
-    MPV: El motor de reproducción recomendado.
+| Característica | Descripción |
+|----------------|-------------|
+| 🔓 **Desofuscador P.A.C.K.E.R.** | Traduce código JavaScript ofuscado en enlaces de video reales (.m3u8 o .mp4) |
+| 📊 **Algoritmo de Éxito** | Aprende de los servidores caídos y siempre te ofrece la mejor opción disponible |
+| 💾 **Memoria Inteligente** | Guarda tu historial y marca los episodios vistos con ● (visto) / ○ (pendiente) |
+| 📱 **Fuerza Bruta en Android** | Lanza reproductores externos mediante Intents del sistema |
+| 🎨 **Interfaz Dinámica** | Colores, temporizadores de respuesta y barra de progreso en tiempo real |
 
-2. Instalación en Termux (Android)
+## 📋 Requisitos Previos
 
-Copia y pega este comando para preparar tu entorno:
-Bash
+Antes de instalar, necesitas tener:
 
+- **Python 3.x** - El lenguaje del script
+- **yt-dlp** - Para análisis de flujos de video
+- **mpv** - El reproductor de video recomendado
+- **ffmpeg** - Para procesamiento de audio/video
+
+## 🛠️ Instalación
+
+### Termux (Android)
+
+```bash
+# Actualiza e instala las dependencias
 pkg update && pkg upgrade
 pkg install python mpv yt-dlp ffmpeg
+
+# Instala las librerías de Python
 pip install requests beautifulsoup4
+```
 
-3. Instalación en PC (Linux/Windows)
+### Linux / Windows (PC)
 
-    Asegúrate de tener mpv y yt-dlp en tu PATH.
+1. Asegúrate de tener `mpv` y `yt-dlp` instalados y en tu PATH
+2. Instala las dependencias de Python:
 
-    Instala las librerías de Python:
-    Bash
+```bashº
+pip install requests beautifulsoup4
+```
 
-    pip install requests beautifulsoup4
+## ▶️ Cómo Usarlo
 
-🛠️ Cómo usarlo
+¡Es muy fácil! Solo ejecuta:
 
-Solo tienes que ejecutar el script y seguir las instrucciones en pantalla:
-Bash
-
+```bash
 python cli_ani.py
+```
 
-💎 Características Destacadas
+Sigue las instrucciones en pantalla y disfruta de tu anime favorito. ¡Es così semplice! 🍝
 
-    Desofuscador P.A.C.K.E.R. Integrado: El script incluye una función js_unpack que traduce código JavaScript "enredado" en enlaces de video reales (.m3u8 o .mp4).
+## 📝 Estructura del Proyecto
 
-    Algoritmo de Tasa de Éxito: No pierdas tiempo con servidores caídos. El sistema registra cada intento exitoso o fallido y genera un ranking en tiempo real para ofrecerte siempre la mejor fuente disponible.
+```
+CLI-ANI/
+├── cli_ani.py      # El script principal
+├── README.md       # Este archivo
+└── LICENSE         # Licencia GPL-3.0
+```
 
-    Memoria Inteligente (JSON): Guarda tu historial de búsqueda y marca los episodios vistos con un sistema visual de puntos (● visto / ○ pendiente).
+## ⚠️ Nota Educational
 
-    Fuerza Bruta en Android: Capacidad única para lanzar reproductores externos (MPV Oficial o Forks) mediante Intents de sistema, asegurando que el video se abra incluso en entornos restringidos.
+Este proyecto fue creado por **Washaka** (2026) con fines educativos. Su propósito es demostrar el poder de Python para automatizar tareas e interactuar con la web moderna.
 
-    Interfaz Dinámica: Incluye temporizadores de respuesta con colores y una barra de progreso honesta alimentada por los metadatos de yt-dlp.
+> 💡 Úsalo con respeto y curiosidad científica. Aprende cómo funciona, experimenta y diviertete!
 
-📝 Nota Educativa
+## 📄 Licencia
 
-Este proyecto fue desarrollado por Washaka para demostrar el potencial de Python en la automatización de tareas y la interacción con la web moderna. Úsalo con respeto y curiosidad científica.
+Este proyecto está bajo la licencia [GPL-3.0](LICENSE). Sientete libre de contribuir, modificar y compartir!
+
+---
+
+⭐ ¡Si te gusta el proyecto, no olvides dar una estrella!
